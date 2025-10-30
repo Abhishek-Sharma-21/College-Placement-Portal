@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ROUTES } from "@/routes/routes";
+import { ROUTES } from "@/Routes/studentRout/routes";
 import {
   FaBuilding,
   FaMapMarkerAlt,
@@ -47,7 +47,9 @@ const SkillTag = ({ skill }) => (
 );
 
 const JobCard = ({ job }) => {
-  const requirementColor = job.isEligible ? "text-green-600" : "text-orange-600";
+  const requirementColor = job.isEligible
+    ? "text-green-600"
+    : "text-orange-600";
 
   const statusBadge = job.isEligible ? (
     <span className="text-xs font-medium bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
@@ -90,15 +92,17 @@ const JobCard = ({ job }) => {
         <p className="text-sm text-gray-600 mb-4">{job.description}</p>
 
         <div className="flex flex-wrap gap-2 mb-5">
-          {jobs.map((k) => k).length && job.skills.map((skill) => (
-            <SkillTag key={skill} skill={skill} />
-          ))}
+          {jobs.map((k) => k).length &&
+            job.skills.map((skill) => <SkillTag key={skill} skill={skill} />)}
         </div>
       </div>
 
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-700">
-          Required: <span className={`font-medium ${requirementColor}`}>{job.required}</span>
+          Required:{" "}
+          <span className={`font-medium ${requirementColor}`}>
+            {job.required}
+          </span>
         </p>
         <Link
           to={ROUTES.ALL_JOBS}
@@ -116,7 +120,9 @@ const AllJobs = () => {
     <div className="w-full">
       <div className="mb-6">
         <h2 className="text-3xl font-bold text-gray-900">All Jobs</h2>
-        <p className="text-md text-gray-600 mt-1">Jobs you're eligible for based on your CGPA and branch</p>
+        <p className="text-md text-gray-600 mt-1">
+          Jobs you're eligible for based on your CGPA and branch
+        </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {jobs.map((job) => (
@@ -128,5 +134,3 @@ const AllJobs = () => {
 };
 
 export default AllJobs;
-
-

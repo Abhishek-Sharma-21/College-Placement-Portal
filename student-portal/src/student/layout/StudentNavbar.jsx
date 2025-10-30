@@ -11,13 +11,13 @@ import {
   FaUser,
   FaSignOutAlt,
 } from "react-icons/fa";
-import { ROUTES } from "@/routes/routes";
+import { ROUTES } from "@/Routes/studentRout/routes";
 
 const navItems = [
   { name: "Dashboard", icon: <FaThLarge />, to: ROUTES.DASHBOARD },
   { name: "All Jobs", icon: <FaBriefcase />, to: ROUTES.ALL_JOBS },
   { name: "Announcements", icon: <FaTasks />, to: ROUTES.ANNOUNCEMENTS },
-  { name: "Profile", icon: <FaUser />, to: "#" },
+  { name: "Profile", icon: <FaUser />, to: ROUTES.PROFILE },
 ];
 
 const linkBase =
@@ -27,6 +27,7 @@ export default function StudentNavbar() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
+  console.log(user);
 
   async function handleLogout(e) {
     e.preventDefault();
@@ -87,7 +88,7 @@ export default function StudentNavbar() {
       </ul>
 
       <div className="flex items-center space-x-4">
-        <div className="text-right">
+        {/* <div className="text-right">
           <span className="block text-sm font-semibold text-gray-800">
             {user?.fullName || "User"}
           </span>
@@ -100,7 +101,7 @@ export default function StudentNavbar() {
           src="https://via.placeholder.com/40"
           alt="User Avatar"
           className="w-10 h-10 rounded-full object-cover"
-        />
+        /> */}
 
         <button
           onClick={handleLogout}

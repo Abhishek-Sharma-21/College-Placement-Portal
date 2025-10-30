@@ -1,17 +1,18 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import AppLayout from "@/components/layout/AppLayout";
-import { ROUTES } from "@/routes/routes";
+import AppLayout from "@/student/layout/AppLayout";
+import { ROUTES } from "@/Routes/studentRout/routes";
 
 const DashboardContent = lazy(() =>
-  import("@/features/dashboard/DashboardContent")
+  import("@/student/pages/dashboard/DashboardContent")
 );
-const AllJobs = lazy(() => import("@/features/jobs/AllJobs"));
+const AllJobs = lazy(() => import("@/student/pages/jobs/AllJobs"));
 const TpoAnnouncements = lazy(() =>
-  import("@/features/announcements/TpoAnnouncements")
+  import("@/student/pages/announcements/TpoAnnouncements")
 );
 const Login = lazy(() => import("@/features/auth/Login"));
 const Register = lazy(() => import("@/features/auth/Register"));
+const Profile = lazy(() => import("@/student/pages/profile/Profile"));
 
 export default function StudentRoutes() {
   return (
@@ -33,6 +34,7 @@ export default function StudentRoutes() {
           <Route path={ROUTES.DASHBOARD} element={<DashboardContent />} />
           <Route path={ROUTES.ALL_JOBS} element={<AllJobs />} />
           <Route path={ROUTES.ANNOUNCEMENTS} element={<TpoAnnouncements />} />
+          <Route path={ROUTES.PROFILE} element={<Profile />} />
         </Route>
 
         {/* Auth routes (no persistent layout) */}

@@ -1,7 +1,7 @@
-import StudentRoutes from "./Routes/StudentRoutes";
+import MainRoute from "./Routes/MainRoute";
 
 function App() {
-  return <StudentRoutes />;
+  return <MainRoute />;
 }
 
 export default App;

@@ -1,7 +1,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ROUTES } from "@/routes/routes";
-import { FaChartLine, FaMapMarkerAlt, FaMoneyBillWave, FaClock } from "react-icons/fa";
+import { ROUTES } from "@/Routes/studentRout/routes";
+import {
+  FaChartLine,
+  FaMapMarkerAlt,
+  FaMoneyBillWave,
+  FaClock,
+} from "react-icons/fa";
 
 const jobs = [
   {
@@ -29,9 +34,13 @@ const JobCard = ({ job }) => {
   const requirementColor = isEligible ? "text-green-600" : "text-orange-600";
 
   const statusBadge = isEligible ? (
-    <span className="text-xs font-medium bg-blue-100 text-blue-700 px-3 py-1 rounded-full">{job.status}</span>
+    <span className="text-xs font-medium bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
+      {job.status}
+    </span>
   ) : (
-    <span className="text-xs font-medium bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{job.status}</span>
+    <span className="text-xs font-medium bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
+      {job.status}
+    </span>
   );
 
   return (
@@ -56,7 +65,10 @@ const JobCard = ({ job }) => {
       </div>
       <div className="flex justify-between items-center mt-4">
         <p className="text-sm text-gray-700">
-          Required: <span className={`font-medium ${requirementColor}`}>{job.required}</span>
+          Required:{" "}
+          <span className={`font-medium ${requirementColor}`}>
+            {job.required}
+          </span>
         </p>
         <Link
           to={ROUTES.ALL_JOBS}
@@ -74,9 +86,13 @@ const RecommendedJobs = () => {
     <div className="bg-white p-6 rounded-lg shadow-sm">
       <div className="flex items-center gap-2 mb-1">
         <FaChartLine className="text-xl text-blue-600" />
-        <h3 className="text-xl font-bold text-gray-800">Recommended Jobs For You</h3>
+        <h3 className="text-xl font-bold text-gray-800">
+          Recommended Jobs For You
+        </h3>
       </div>
-      <p className="text-sm text-gray-500 mb-4">Jobs matched based on your skills and assessment scores</p>
+      <p className="text-sm text-gray-500 mb-4">
+        Jobs matched based on your skills and assessment scores
+      </p>
       <div className="space-y-4">
         {jobs.map((job) => (
           <JobCard key={job.title} job={job} />
@@ -87,5 +103,3 @@ const RecommendedJobs = () => {
 };
 
 export default RecommendedJobs;
-
-

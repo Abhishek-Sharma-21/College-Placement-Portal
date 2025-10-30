@@ -1,6 +1,6 @@
 import React from "react";
-import StudentNavbar from "@/components/layout/StudentNavbar";
-import StudentWelcomeBanner from "@/components/layout/StudentWelcomeBanner";
+import StudentNavbar from "@/student/layout/StudentNavbar";
+import StudentWelcomeBanner from "@/student/layout/StudentWelcomeBanner";
 import { Outlet } from "react-router-dom";
 
 export default function AppLayout() {
@@ -16,5 +16,3 @@ export default function AppLayout() {
     </div>
   );
 }
-
-

@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useNavigate } from "react-router-dom";
-import { ROUTES } from "@/routes/routes";
+import { ROUTES } from "@/Routes/studentRout/routes";
+import TPO_ROUTES from "../../Routes/tpoRout/TpoRoutes";
 import axios from "axios";
 import {
   loginStart,
@@ -64,6 +65,7 @@ function Login() {
         withCredentials: true,
       });
 
+      const loggedUser = response.data?.user || response.data;
       // 2. On success, update redux auth state
       dispatch(
         loginSuccess({
@@ -72,9 +74,11 @@ function Login() {
         })
       );
 
-      // 3. Redirect to the dashboard
-      // Make sure ROUTES.DASHBOARD is defined, or just use "/"
-      navigate(ROUTES.DASHBOARD || "/");
+      if (loggedUser?.role === "tpo") {
+        navigate(TPO_ROUTES.DASHBOARD);
+      } else {
+        navigate(ROUTES.DASHBOARD || "/");
+      }
     } catch (apiError) {
       // 4. Handle errors (like "Invalid credentials")
       const message =

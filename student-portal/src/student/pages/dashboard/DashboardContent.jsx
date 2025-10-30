@@ -1,6 +1,6 @@
 import React from "react";
-import TpoAnnouncements from "@/features/announcements/TpoAnnouncements";
-import RecommendedJobs from "@/features/jobs/JobCard";
+import TpoAnnouncements from "@/student/pages/announcements/TpoAnnouncements";
+import RecommendedJobs from "@/student/pages/jobs/JobCard";
 
 const DashboardContent = () => {
   return (
@@ -16,5 +16,3 @@ const DashboardContent = () => {
 };
 
 export default DashboardContent;
-
-
