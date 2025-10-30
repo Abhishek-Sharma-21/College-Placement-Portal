@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import axios from "axios";
 import { logout } from "@/store/slices/authSlice";
+import { clearProfile } from "@/store/slices/studentProfileSlice";
 import {
   FaGraduationCap,
   FaThLarge,
@@ -27,7 +28,6 @@ export default function StudentNavbar() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
-  console.log(user);
 
   async function handleLogout(e) {
     e.preventDefault();
@@ -40,8 +40,9 @@ export default function StudentNavbar() {
     } catch {
       // ignore network errors; proceed to clear client state
     } finally {
-      // Clear redux auth state and redirect to login
+      // Clear both auth and profile state
       dispatch(logout());
+      dispatch(clearProfile());
       navigate(ROUTES.LOGIN);
     }
   }
@@ -63,46 +64,24 @@ export default function StudentNavbar() {
       <ul className="flex space-x-2">
         {navItems.map((item) => (
           <li key={item.name}>
-            {item.to === "#" ? (
-              <button className={`${linkBase} text-gray-700 hover:bg-gray-100`}>
-                <span className="mr-2 text-lg">{item.icon}</span>
-                {item.name}
-              </button>
-            ) : (
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `${linkBase} ${
-                    isActive
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`
-                }
-              >
-                <span className="mr-2 text-lg">{item.icon}</span>
-                {item.name}
-              </NavLink>
-            )}
+            <NavLink
+              to={item.to}
+              className={({ isActive }) =>
+                `${linkBase} ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`
+              }
+            >
+              <span className="mr-2 text-lg">{item.icon}</span>
+              {item.name}
+            </NavLink>
           </li>
         ))}
       </ul>
 
       <div className="flex items-center space-x-4">
-        {/* <div className="text-right">
-          <span className="block text-sm font-semibold text-gray-800">
-            {user?.fullName || "User"}
-          </span>
-          <span className="block text-xs text-gray-500">
-            {user?.role || ""}
-          </span>
-        </div>
-
-        <img
-          src="https://via.placeholder.com/40"
-          alt="User Avatar"
-          className="w-10 h-10 rounded-full object-cover"
-        /> */}
-
         <button
           onClick={handleLogout}
           className="flex items-center px-4 py-2 border border-gray-300 rounded-lg font-medium text-gray-700 bg-white hover:bg-gray-100 transition-colors"

@@ -17,22 +17,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
-
-// --- Redux Imports ---
-// Note: You will need to run 'npm install react-redux' for this to work
 import { useDispatch, useSelector } from "react-redux";
-// Assuming '@' is 'src/', this path should work if your slice is at 'src/store/slices/studentProfileSlice.js'
 import {
+  fetchProfileStart,
+  fetchProfileSuccess,
+  fetchProfileFailure,
   updateProfileStart,
   updateProfileSuccess,
   updateProfileFailure,
+  clearProfileError,
 } from "@/store/slices/studentProfileSlice";
+import { ROUTES } from "@/Routes/studentRout/routes";
 
-// This component is dedicated to completing the Student Profile.
+const API_URL = "http://localhost:4000/api/profile";
+
 function ProfileCompletionForm() {
-  // --- Local state for form inputs ---
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { loading, error, profile, isProfileComplete } = useSelector(
+    (state) => state.studentProfile
+  );
+  const { user } = useSelector((state) => state.auth);
+  console.log(user);
+
+  // Local state for form inputs
   const [branch, setBranch] = useState("");
   const [cgpa, setCgpa] = useState("");
   const [gradYear, setGradYear] = useState("");
@@ -41,90 +52,145 @@ function ProfileCompletionForm() {
   const [bio, setBio] = useState("");
   const [profileImageFile, setProfileImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
 
-  // --- Redux State ---
-  const dispatch = useDispatch();
-  // Get state from Redux
-  const { loading, error, profile } = useSelector(
-    (state) => state.studentProfile
-  );
-  // Check if the profile has been successfully updated
-  const success = !!profile && !loading && !error;
+  // Fetch profile on component mount
+  useEffect(() => {
+    const fetchProfile = async () => {
+      dispatch(fetchProfileStart());
+      try {
+        const response = await axios.get(`${API_URL}/profile`, {
+          withCredentials: true,
+        });
+        dispatch(fetchProfileSuccess(response.data.profile));
+
+        // Pre-fill form with existing data
+        const profileData = response.data.profile;
+        if (profileData) {
+          setBranch(profileData.branch || "");
+          setCgpa(profileData.cgpa?.toString() || "");
+          setGradYear(profileData.gradYear?.toString() || "");
+          setResumeLink(profileData.resumeLink || "");
+          setLinkedIn(profileData.linkedIn || "");
+          setBio(profileData.bio || "");
+          setImagePreview(profileData.profilePicUrl || null);
+        }
+      } catch (err) {
+        // Profile might not exist yet - that's okay for first-time setup
+        if (err.response?.status === 404) {
+          setIsFirstTimeSetup(true);
+          dispatch(fetchProfileSuccess(null));
+        } else {
+          const message =
+            err.response?.data?.message || "Failed to fetch profile";
+          dispatch(fetchProfileFailure(message));
+        }
+      }
+    };
+
+    fetchProfile();
+  }, [dispatch]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Validate file size (2MB max)
+      if (file.size > 2 * 1024 * 1024) {
+        alert("File size must be less than 2MB");
+        return;
+      }
+
+      // Validate file type
+      if (!file.type.match(/^image\/(png|jpeg|jpg)$/)) {
+        alert("Only PNG and JPG images are allowed");
+        return;
+      }
+
       setProfileImageFile(file);
-      // Create a temporary URL for client-side preview
       setImagePreview(URL.createObjectURL(file));
     } else {
       setProfileImageFile(null);
-      setImagePreview(null);
+      // Keep existing image preview if no new file
+      if (profile?.profilePicUrl) {
+        setImagePreview(profile.profilePicUrl);
+      } else {
+        setImagePreview(null);
+      }
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    dispatch(updateProfileStart()); // Dispatch start action
+    dispatch(updateProfileStart());
 
-    // 1. Create FormData
+    // Validate required fields
+    if (!branch) {
+      dispatch(updateProfileFailure("Branch is required"));
+      return;
+    }
+
     const formData = new FormData();
     formData.append("branch", branch);
-    formData.append("cgpa", cgpa);
-    formData.append("gradYear", gradYear);
-    formData.append("resumeLink", resumeLink);
-    formData.append("linkedIn", linkedIn);
-    formData.append("bio", bio);
+    if (cgpa) formData.append("cgpa", cgpa);
+    if (gradYear) formData.append("gradYear", gradYear);
+    if (resumeLink) formData.append("resumeLink", resumeLink);
+    if (linkedIn) formData.append("linkedIn", linkedIn);
+    if (bio) formData.append("bio", bio);
+
+    // Only append new image if user selected one
     if (profileImageFile) {
       formData.append("profilePic", profileImageFile);
     }
 
     try {
-      // 4. Send the request
-      const response = await axios.put(
-        "/api/profile/profile", // The full, correct API path
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          withCredentials: true,
-        }
-      );
+      const response = await axios.put(`${API_URL}/profile`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        withCredentials: true,
+      });
 
-      // Dispatch success action with the updated profile
       dispatch(updateProfileSuccess(response.data.profile));
-      console.log("Profile updated:", response.data);
+
+      // Update preview with new Cloudinary URL
+      if (response.data.profile.profilePicUrl) {
+        setImagePreview(response.data.profile.profilePicUrl);
+      }
+
+      // Clear the file input
+      setProfileImageFile(null);
     } catch (err) {
       const message =
         err.response?.data?.message ||
         "Failed to update profile. Please try again.";
-
-      // Dispatch failure action with the error message
       dispatch(updateProfileFailure(message));
       console.error("Profile update failed:", err);
     }
   };
 
+  const success = profile && !loading && !error;
+
   return (
-    <div className="flex min-h-screen items-center justify-center ">
+    <div className="flex min-h-screen items-center justify-center">
       <Card className="w-full max-w-3xl shadow-xl border-t-4 border-blue-500">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-gray-800 dark:text-white">
-            Complete Your Student Profile
+            {profile ? "Update" : "Complete"} Your Student Profile
           </CardTitle>
           <CardDescription className="text-lg text-gray-600 dark:text-gray-300">
-            Just few more details to get you started!
+            {profile
+              ? "Update your profile information"
+              : "Just a few more details to get you started!"}
           </CardDescription>
         </CardHeader>
 
         <form onSubmit={handleSubmit}>
           <CardContent className="grid grid-cols-1 gap-8 md:grid-cols-12">
-            {/* --- Image Upload Section --- */}
+            {/* Image Upload Section */}
             <div className="flex flex-col items-center justify-center md:col-span-4">
               <Label
                 htmlFor="profile-pic"
-                className="mb-4 flex h-48 w-48 cursor-pointer items-center justify-center rounded-full border-4 border-dashed border-gray-300 bg-gray-100 p-4 text-center text-gray-500 transition hover:border-blue-400 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:hover:border-blue-500 dark:hover:bg-gray-600"
+                className="mb-4 flex h-48 w-48 cursor-pointer items-center justify-center rounded-full border-4 border-dashed border-gray-300 bg-gray-100 p-4 text-center text-gray-500 transition hover:border-blue-400 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:hover:border-blue-500 dark:hover:bg-gray-600 overflow-hidden"
               >
                 {imagePreview ? (
                   <img
@@ -139,8 +205,8 @@ function ProfileCompletionForm() {
               <Input
                 id="profile-pic"
                 type="file"
-                accept="image/png, image/jpeg"
-                className="hidden" // Hide the default ugly input
+                accept="image/png, image/jpeg, image/jpg"
+                className="hidden"
                 onChange={handleImageChange}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -148,11 +214,13 @@ function ProfileCompletionForm() {
               </p>
             </div>
 
-            {/* --- Form Fields Section --- */}
+            {/* Form Fields Section */}
             <div className="grid gap-6 md:col-span-8">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="student-branch">Branch</Label>
+                  <Label htmlFor="student-branch">
+                    Branch <span className="text-red-500">*</span>
+                  </Label>
                   <Select onValueChange={setBranch} value={branch}>
                     <SelectTrigger id="student-branch">
                       <SelectValue placeholder="Select your branch" />
@@ -184,6 +252,8 @@ function ProfileCompletionForm() {
                     placeholder="e.g., 2025"
                     value={gradYear}
                     onChange={(e) => setGradYear(e.target.value)}
+                    min="2020"
+                    max="2030"
                   />
                 </div>
               </div>
@@ -198,9 +268,11 @@ function ProfileCompletionForm() {
                     placeholder="e.g., 8.5"
                     value={cgpa}
                     onChange={(e) => setCgpa(e.target.value)}
+                    min="0"
+                    max="10"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    On a 10-point scale.
+                    On a 10-point scale
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -243,13 +315,16 @@ function ProfileCompletionForm() {
                   className="min-h-[100px]"
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
+                  maxLength={500}
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {bio.length}/500 characters
+                </p>
               </div>
             </div>
           </CardContent>
 
           <CardFooter className="flex flex-col">
-            {/* --- Error/Success Messages From Redux Store --- */}
             {error && (
               <div className="mb-4 w-full rounded-md bg-red-100 p-3 text-center text-sm text-red-700 dark:bg-red-900 dark:text-red-200">
                 {error}
@@ -257,12 +332,16 @@ function ProfileCompletionForm() {
             )}
             {success && (
               <div className="mb-4 w-full rounded-md bg-green-100 p-3 text-center text-sm text-green-700 dark:bg-green-900 dark:text-green-200">
-                Profile updated successfully!
+                Profile {profile ? "updated" : "created"} successfully!
               </div>
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Saving..." : "Save Profile"}
+              {loading
+                ? "Saving..."
+                : profile
+                ? "Update Profile"
+                : "Save Profile"}
             </Button>
           </CardFooter>
         </form>
