@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/Routes/studentRout/routes";
 import {
@@ -8,37 +8,7 @@ import {
   FaClock,
   FaUsers,
 } from "react-icons/fa";
-
-const jobs = [
-  {
-    title: "Frontend Developer",
-    company: "TechCorp Inc.",
-    status: "Eligible",
-    location: "Bangalore",
-    salary: "₹8-12 LPA",
-    posted: "2 days ago",
-    applicants: "45 applicants",
-    description:
-      "Join our dynamic frontend team to build cutting-edge web applications using React, TypeScript, and modern development practices. You will...",
-    skills: ["React", "TypeScript", "CSS", "+3 more"],
-    required: "Aptitude Test (75%+)",
-    isEligible: true,
-  },
-  {
-    title: "Software Engineer",
-    company: "InnovateTech",
-    status: "Assessment Required",
-    location: "Hyderabad",
-    salary: "₹10-15 LPA",
-    posted: "1 days ago",
-    applicants: "62 applicants",
-    description:
-      "Work on challenging backend systems and microservices architecture. Help build scalable solutions for enterprise clients.",
-    skills: ["Java", "Spring Boot", "Microservices", "+3 more"],
-    required: "Java Test (80%+)",
-    isEligible: false,
-  },
-];
+import axios from "axios";
 
 const SkillTag = ({ skill }) => (
   <span className="bg-gray-200 text-gray-700 text-xs font-medium px-2.5 py-1 rounded-full">
@@ -47,17 +17,15 @@ const SkillTag = ({ skill }) => (
 );
 
 const JobCard = ({ job }) => {
-  const requirementColor = job.isEligible
-    ? "text-green-600"
-    : "text-orange-600";
-
-  const statusBadge = job.isEligible ? (
-    <span className="text-xs font-medium bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
-      {job.status}
-    </span>
-  ) : (
-    <span className="text-xs font-medium bg-gray-200 text-gray-700 px-3 py-1 rounded-full">
-      {job.status}
+  const statusBadge = (
+    <span
+      className={`text-xs font-medium px-3 py-1 rounded-full ${
+        job.status === "active"
+          ? "bg-blue-100 text-blue-700"
+          : "bg-gray-200 text-gray-700"
+      }`}
+    >
+      {job.status === "active" ? "Active" : "Completed"}
     </span>
   );
 
@@ -76,34 +44,34 @@ const JobCard = ({ job }) => {
 
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500 my-4 border-y border-gray-100 py-3">
           <span className="flex items-center gap-1.5">
-            <FaMapMarkerAlt /> {job.location}
+            <FaMapMarkerAlt /> {job.location || "Not specified"}
           </span>
           <span className="flex items-center gap-1.5">
-            <FaMoneyBillWave /> {job.salary}
+            <FaMoneyBillWave /> {job.ctc ? `₹${job.ctc} LPA` : "Not Disclosed"}
           </span>
           <span className="flex items-center gap-1.5">
-            <FaClock /> {job.posted}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <FaUsers /> {job.applicants}
+            <FaClock />{" "}
+            {job.createdAt ? new Date(job.createdAt).toLocaleDateString() : "-"}
           </span>
         </div>
 
-        <p className="text-sm text-gray-600 mb-4">{job.description}</p>
+        {job.description && (
+          <p className="text-sm text-gray-600 mb-4 line-clamp-3">
+            {job.description}
+          </p>
+        )}
 
-        <div className="flex flex-wrap gap-2 mb-5">
-          {jobs.map((k) => k).length &&
-            job.skills.map((skill) => <SkillTag key={skill} skill={skill} />)}
-        </div>
+        {Array.isArray(job.skills) && job.skills.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-5">
+            {job.skills.map((skill) => (
+              <SkillTag key={skill} skill={skill} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-700">
-          Required:{" "}
-          <span className={`font-medium ${requirementColor}`}>
-            {job.required}
-          </span>
-        </p>
+        <p className="text-sm text-gray-700">Posted by TPO</p>
         <Link
           to={ROUTES.ALL_JOBS}
           className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
@@ -116,19 +84,47 @@ const JobCard = ({ job }) => {
 };
 
 const AllJobs = () => {
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await axios.get("http://localhost:4000/api/jobs", {
+          withCredentials: true,
+        });
+        const all = res.data || [];
+        setJobs(all.filter((j) => j.status === "active"));
+      } catch (e) {
+        setError(e.response?.data?.message || "Failed to fetch jobs.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchJobs();
+  }, []);
+
   return (
     <div className="w-full">
       <div className="mb-6">
         <h2 className="text-3xl font-bold text-gray-900">All Jobs</h2>
         <p className="text-md text-gray-600 mt-1">
-          Jobs you're eligible for based on your CGPA and branch
+          Latest openings from your TPO
         </p>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {jobs.map((job) => (
-          <JobCard key={job.title} job={job} />
-        ))}
-      </div>
+      {loading && <div>Loading jobs...</div>}
+      {error && <div className="text-red-600">{error}</div>}
+      {!loading && !error && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {jobs.map((job) => (
+            <JobCard key={job._id} job={job} />
+          ))}
+          {jobs.length === 0 && <div>No active jobs right now.</div>}
+        </div>
+      )}
     </div>
   );
 };

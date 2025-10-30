@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Briefcase,
@@ -8,16 +8,32 @@ import {
   GraduationCap,
   ClipboardList,
   Award,
+  Megaphone,
 } from "lucide-react";
 // import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { TPO_ROUTES } from "@/Routes/TpoRout/TpoRoutes";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import axios from "axios";
+import { logout } from "@/store/slices/authSlice";
 
 function TPONavbar() {
   const { user } = useSelector((state) => state.auth);
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
 
-  const handleLogout = () => {
-    console.log("Logging out...");
+  const handleLogout = async () => {
+    try {
+      await axios.post(
+        "http://localhost:4000/api/auth/logout",
+        {},
+        { withCredentials: true }
+      );
+    } catch {
+      // ignore network errors; proceed to clear client state
+    } finally {
+      dispatch(logout());
+      navigate("/login");
+    }
   };
 
   return (
@@ -67,6 +83,15 @@ function TPONavbar() {
           >
             <GraduationCap className="h-4 w-4" />
             <span>Manage Students</span>
+          </Link>
+        </Button>
+        <Button variant="ghost" asChild>
+          <Link
+            to={TPO_ROUTES.ANNOUNCEMENTS}
+            className="flex items-center space-x-2"
+          >
+            <Megaphone className="h-4 w-4" />
+            <span>Announcements</span>
           </Link>
         </Button>
       </div>

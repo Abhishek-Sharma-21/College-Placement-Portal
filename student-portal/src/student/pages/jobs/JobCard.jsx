@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/Routes/studentRout/routes";
 import {
@@ -7,39 +7,17 @@ import {
   FaMoneyBillWave,
   FaClock,
 } from "react-icons/fa";
-
-const jobs = [
-  {
-    title: "Frontend Developer",
-    company: "TechCorp Inc.",
-    location: "Bangalore",
-    salary: "₹8-12 LPA",
-    posted: "Posted 2 days ago",
-    required: "Aptitude Test (75%+)",
-    status: "Eligible",
-  },
-  {
-    title: "Software Engineer",
-    company: "InnovateTech",
-    location: "Hyderabad",
-    salary: "₹10-15 LPA",
-    posted: "Posted 1 days ago",
-    required: "Java Test (80%+)",
-    status: "Assessment Required",
-  },
-];
+import axios from "axios";
 
 const JobCard = ({ job }) => {
-  const isEligible = job.status === "Eligible";
-  const requirementColor = isEligible ? "text-green-600" : "text-orange-600";
-
-  const statusBadge = isEligible ? (
+  const isActive = job.status === "active";
+  const statusBadge = isActive ? (
     <span className="text-xs font-medium bg-blue-100 text-blue-700 px-3 py-1 rounded-full">
-      {job.status}
+      Active
     </span>
   ) : (
     <span className="text-xs font-medium bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
-      {job.status}
+      Completed
     </span>
   );
 
@@ -54,22 +32,20 @@ const JobCard = ({ job }) => {
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 my-3">
         <span className="flex items-center gap-1.5">
-          <FaMapMarkerAlt /> {job.location}
+          <FaMapMarkerAlt /> {job.location || "Not specified"}
         </span>
         <span className="flex items-center gap-1.5">
-          <FaMoneyBillWave /> {job.salary}
+          <FaMoneyBillWave /> {job.ctc ? `₹${job.ctc} LPA` : "Not Disclosed"}
         </span>
         <span className="flex items-center gap-1.5">
-          <FaClock /> {job.posted}
+          <FaClock />{" "}
+          {job.createdAt ? new Date(job.createdAt).toLocaleDateString() : "-"}
         </span>
       </div>
-      <div className="flex justify-between items-center mt-4">
-        <p className="text-sm text-gray-700">
-          Required:{" "}
-          <span className={`font-medium ${requirementColor}`}>
-            {job.required}
-          </span>
-        </p>
+      {job.description && (
+        <p className="text-sm text-gray-700 line-clamp-3">{job.description}</p>
+      )}
+      <div className="flex justify-end items-center mt-4">
         <Link
           to={ROUTES.ALL_JOBS}
           className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
@@ -82,6 +58,30 @@ const JobCard = ({ job }) => {
 };
 
 const RecommendedJobs = () => {
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await axios.get("http://localhost:4000/api/jobs", {
+          withCredentials: true,
+        });
+        const all = res.data || [];
+        // Show only active jobs and limit to 3 for recommendations
+        setJobs(all.filter((j) => j.status === "active").slice(0, 3));
+      } catch (e) {
+        setError(e.response?.data?.message || "Failed to fetch jobs.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchJobs();
+  }, []);
+
   return (
     <div className="bg-white p-6 rounded-lg shadow-sm">
       <div className="flex items-center gap-2 mb-1">
@@ -91,13 +91,18 @@ const RecommendedJobs = () => {
         </h3>
       </div>
       <p className="text-sm text-gray-500 mb-4">
-        Jobs matched based on your skills and assessment scores
+        Latest openings from your TPO
       </p>
-      <div className="space-y-4">
-        {jobs.map((job) => (
-          <JobCard key={job.title} job={job} />
-        ))}
-      </div>
+      {loading && <div>Loading...</div>}
+      {error && <div className="text-red-600">{error}</div>}
+      {!loading && !error && (
+        <div className="space-y-4">
+          {jobs.map((job) => (
+            <JobCard key={job._id} job={job} />
+          ))}
+          {jobs.length === 0 && <div>No active jobs right now.</div>}
+        </div>
+      )}
     </div>
   );
 };

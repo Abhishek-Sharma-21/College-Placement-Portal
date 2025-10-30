@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -28,16 +27,14 @@ import {
   updateProfileStart,
   updateProfileSuccess,
   updateProfileFailure,
-  clearProfileError,
 } from "@/store/slices/studentProfileSlice";
 import { ROUTES } from "@/Routes/studentRout/routes";
 
 const API_URL = "http://localhost:4000/api/profile";
 
 function ProfileCompletionForm() {
-  const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { loading, error, profile, isProfileComplete } = useSelector(
+  const { loading, error, profile } = useSelector(
     (state) => state.studentProfile
   );
   const { user } = useSelector((state) => state.auth);

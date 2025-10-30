@@ -1,13 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useDispatch } from "react-redux";
 import {
-  addJobStart,
-  addJobSuccess,
-  addJobFailure,
+  updateJobStart,
+  updateJobSuccess,
+  updateJobFailure,
 } from "@/store/slices/jobSlice";
 
-function AddJob() {
+function EditJob() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
   const [form, setForm] = useState({
     title: "",
     company: "",
@@ -18,8 +22,36 @@ function AddJob() {
     deadline: "",
     applicationLink: "",
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const dispatch = useDispatch();
+
+  useEffect(() => {
+    const loadJob = async () => {
+      setError(null);
+      try {
+        const res = await axios.get(`http://localhost:4000/api/jobs/${id}`, {
+          withCredentials: true,
+        });
+        const job = res.data;
+        setForm({
+          title: job.title || "",
+          company: job.company || "",
+          description: job.description || "",
+          skills: Array.isArray(job.skills) ? job.skills.join(", ") : "",
+          ctc: job.ctc ?? "",
+          location: job.location || "",
+          deadline: job.deadline ? job.deadline.substring(0, 10) : "",
+          applicationLink: job.applicationLink || "",
+        });
+      } catch (e) {
+        setError(e.response?.data?.message || "Failed to load job");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadJob();
+  }, [id]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -28,40 +60,36 @@ function AddJob() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSuccess(null);
-    dispatch(addJobStart());
+    setError(null);
+    dispatch(updateJobStart());
     try {
-      const postData = {
+      const putData = {
         ...form,
         skills: form.skills.split(",").map((s) => s.trim()),
       };
-      const response = await axios.post(
-        "http://localhost:4000/api/jobs",
-        postData,
+      const res = await axios.put(
+        `http://localhost:4000/api/jobs/${id}`,
+        putData,
         {
           withCredentials: true,
         }
       );
-      dispatch(addJobSuccess(response.data.job));
-      setSuccess("Job posted successfully!");
-      setForm({
-        title: "",
-        company: "",
-        description: "",
-        skills: "",
-        ctc: "",
-        location: "",
-        deadline: "",
-        applicationLink: "",
-      });
-    } catch (err) {
-      const errorMsg = err.response?.data?.message || "Failed to post job.";
-      dispatch(addJobFailure(errorMsg));
+      dispatch(updateJobSuccess(res.data.job));
+      setSuccess("Job updated successfully!");
+      navigate("/tpo/jobs");
+    } catch (e) {
+      const msg = e.response?.data?.message || "Failed to update job.";
+      dispatch(updateJobFailure(msg));
+      setError(msg);
     }
   };
 
+  if (loading) return <div className="p-6">Loading...</div>;
+
   return (
     <div className="max-w-xl mx-auto mt-10 p-6 bg-white rounded shadow">
-      <h2 className="text-2xl font-bold mb-6 text-blue-700">Add New Job</h2>
+      <h2 className="text-2xl font-bold mb-6 text-blue-700">Edit Job</h2>
+      {error && <div className="text-red-600 mb-4">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block font-semibold">Title *</label>
@@ -164,7 +192,7 @@ function AddJob() {
           type="submit"
           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-bold"
         >
-          Post Job
+          Save Changes
         </button>
         {success && <div className="text-green-600 p-2">{success}</div>}
       </form>
@@ -172,4 +200,4 @@ function AddJob() {
   );
 }
 
-export default AddJob;
+export default EditJob;

@@ -9,6 +9,9 @@ const RecentJobPostingCard = lazy(() =>
 const RecentlyRegisteredStudents = lazy(() =>
   import("@/tpo/pages/RecentRegisteredStudent/RecentlyRegisteredStudents")
 );
+const AddJob = lazy(() => import("@/tpo/pages/AddJob"));
+const EditJob = lazy(() => import("@/tpo/pages/EditJob"));
+const TpoAnnouncementsManage = lazy(() => import("@/tpo/pages/Announcements"));
 
 // Minimal dashboard that composes existing widgets
 const TpoDashboard = () => (
@@ -39,9 +42,15 @@ export default function TpoNavigateRoutes() {
             path={TPO_ROUTES.MANAGE_JOBS}
             element={<RecentJobPostingCard />}
           />
+          <Route path="/tpo/jobs/add" element={<AddJob />} />
+          <Route path="/tpo/jobs/edit/:id" element={<EditJob />} />
           <Route
             path={TPO_ROUTES.MANAGE_STUDENTS}
             element={<RecentlyRegisteredStudents />}
+          />
+          <Route
+            path={TPO_ROUTES.ANNOUNCEMENTS}
+            element={<TpoAnnouncementsManage />}
           />
         </Route>
 
