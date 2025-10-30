@@ -22,6 +22,11 @@ import {
   loginFailure,
   clearError,
 } from "@/store/slices/authSlice";
+import {
+  fetchProfileStart,
+  fetchProfileSuccess,
+  fetchProfileFailure,
+} from "@/store/slices/studentProfileSlice";
 
 // Redux imports are removed
 
@@ -40,6 +45,24 @@ function Login() {
 
   // Make sure this port matches your backend server.js
   const API_URL = "http://localhost:4000/api/auth/login";
+
+  // Add this function
+  const fetchProfile = async (dispatch) => {
+    dispatch(fetchProfileStart());
+    try {
+      const response = await axios.get(
+        "http://localhost:4000/api/profile/profile",
+        {
+          withCredentials: true,
+        }
+      );
+      dispatch(fetchProfileSuccess(response.data.profile));
+    } catch (error) {
+      const message =
+        error.response?.data?.message || "Failed to fetch profile";
+      dispatch(fetchProfileFailure(message));
+    }
+  };
 
   // --- Generic Submit Handler ---
   const handleLogin = async (e, role) => {
@@ -73,6 +96,11 @@ function Login() {
           token: null, // httpOnly cookie set by backend
         })
       );
+
+      // 3. Fetch the profile right after login!
+      if (loggedUser?.role === "student") {
+        await fetchProfile(dispatch);
+      }
 
       if (loggedUser?.role === "tpo") {
         navigate(TPO_ROUTES.DASHBOARD);

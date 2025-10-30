@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import axios from "axios";
 import { logout } from "@/store/slices/authSlice";
 import { clearProfile } from "@/store/slices/studentProfileSlice";
@@ -27,7 +27,7 @@ const linkBase =
 export default function StudentNavbar() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.auth);
+  // const { user } = useSelector((state) => state.auth);
 
   async function handleLogout(e) {
     e.preventDefault();
