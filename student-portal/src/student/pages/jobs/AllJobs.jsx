@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { ROUTES } from "@/Routes/studentRout/routes";
 import {
   FaBuilding,
@@ -17,6 +16,64 @@ const SkillTag = ({ skill }) => (
 );
 
 const JobCard = ({ job }) => {
+  const [applied, setApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  // Check if student has already applied for this job
+  useEffect(() => {
+    const checkApplicationStatus = async () => {
+      try {
+        const res = await axios.get(
+          "http://localhost:4000/api/applications/my",
+          {
+            withCredentials: true,
+          }
+        );
+        const hasApplied = res.data.some(
+          (application) => application.job._id === job._id
+        );
+        setApplied(hasApplied);
+      } catch (error) {
+        console.error("Error checking application status:", error);
+      }
+    };
+    checkApplicationStatus();
+  }, [job._id]);
+
+  const handleApply = async () => {
+    if (applied) return;
+
+    setApplying(true);
+    try {
+      // Submit application to backend
+      await axios.post(
+        `http://localhost:4000/api/applications/job/${job._id}`,
+        {},
+        {
+          withCredentials: true,
+        }
+      );
+
+      setApplied(true);
+
+      // If there's an external application link, open it
+      if (job.applicationLink) {
+        window.open(job.applicationLink, "_blank");
+      } else {
+        alert(
+          "Application submitted successfully! TPO will review your application."
+        );
+      }
+    } catch (error) {
+      const errorMsg =
+        error.response?.data?.message || "Failed to apply for job.";
+      alert(errorMsg);
+      console.error("Error applying for job:", error);
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const statusBadge = (
     <span
       className={`text-xs font-medium px-3 py-1 rounded-full ${
@@ -72,12 +129,21 @@ const JobCard = ({ job }) => {
 
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-700">Posted by TPO</p>
-        <Link
-          to={ROUTES.ALL_JOBS}
-          className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        <button
+          onClick={handleApply}
+          disabled={applied || applying || job.status !== "active"}
+          className={`px-5 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
+            applied
+              ? "bg-green-600 cursor-not-allowed"
+              : applying
+              ? "bg-blue-400 cursor-wait"
+              : job.status === "active"
+              ? "bg-blue-600 hover:bg-blue-700"
+              : "bg-gray-400 cursor-not-allowed"
+          }`}
         >
-          View Details
-        </Link>
+          {applied ? "Applied" : applying ? "Applying..." : "Apply"}
+        </button>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ const DashboardContent = lazy(() =>
   import("@/student/pages/dashboard/DashboardContent")
 );
 const AllJobs = lazy(() => import("@/student/pages/jobs/AllJobs"));
+const MyJobs = lazy(() => import("@/student/pages/jobs/MyJobs"));
 const TpoAnnouncements = lazy(() =>
   import("@/student/pages/announcements/TpoAnnouncements")
 );
@@ -33,6 +34,7 @@ export default function StudentRoutes() {
         <Route element={<AppLayout />}>
           <Route path={ROUTES.DASHBOARD} element={<DashboardContent />} />
           <Route path={ROUTES.ALL_JOBS} element={<AllJobs />} />
+          <Route path={ROUTES.MY_JOBS} element={<MyJobs />} />
           <Route path={ROUTES.ANNOUNCEMENTS} element={<TpoAnnouncements />} />
           <Route path={ROUTES.PROFILE} element={<Profile />} />
         </Route>

@@ -5,6 +5,8 @@ import studentProfileRouter from "./student/studentProfile.route.js";
 import jobRouter from "./job.routes.js";
 import studentsRouter from "./student/students.route.js";
 import announcementRouter from "./announcement.routes.js";
+import assessmentRouter from "./assessment.routes.js";
+import jobApplicationRouter from "./jobApplication.routes.js";
 
 import { protect } from "../middlewares/authMiddleware.js";
 const router = Router();
@@ -15,5 +17,7 @@ router.use("/profile", protect, studentProfileRouter);
 router.use("/jobs", jobRouter);
 router.use("/students", studentsRouter);
 router.use("/announcements", announcementRouter);
+router.use("/assessments", assessmentRouter);
+router.use("/applications", jobApplicationRouter);
 
 export default router;
