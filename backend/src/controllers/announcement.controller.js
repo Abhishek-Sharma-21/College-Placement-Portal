@@ -2,7 +2,7 @@ import Announcement from "../model/announcement.model.js";
 
 export const createAnnouncement = async (req, res) => {
   try {
-    const { title, content, scheduledAt } = req.body;
+    const { title, content, scheduledAt, pdfUrl, pdfFileName } = req.body;
     if (!title || !content) {
       return res.status(400).json({ message: "Title and content are required." });
     }
@@ -10,6 +10,8 @@ export const createAnnouncement = async (req, res) => {
       title,
       content,
       scheduledAt: scheduledAt || undefined,
+      pdfUrl: pdfUrl || undefined,
+      pdfFileName: pdfFileName || undefined,
       createdBy: req.user.id,
     });
     res.status(201).json({ message: "Announcement created", announcement });

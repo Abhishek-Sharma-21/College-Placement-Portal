@@ -14,6 +14,7 @@ import {
 } from "@/store/slices/jobSlice";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -22,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
 import {
   Select,
   SelectContent,
@@ -61,6 +63,7 @@ const RecentJobPostingCard = ({ job }) => {
   const [applications, setApplications] = useState([]);
   const [applicationCount, setApplicationCount] = useState(0);
   const [loadingApplications, setLoadingApplications] = useState(false);
+
   const [openMenuId, setOpenMenuId] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -128,6 +131,7 @@ const RecentJobPostingCard = ({ job }) => {
         { withCredentials: true }
       );
       setApplications(res.data);
+
       setShowJobModal(true);
     } catch (error) {
       console.error("Error fetching applications:", error);
@@ -171,6 +175,7 @@ const RecentJobPostingCard = ({ job }) => {
   // Fetch application count on mount
   useEffect(() => {
     fetchApplicationCount();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job._id]);
 
@@ -283,6 +288,7 @@ const RecentJobPostingCard = ({ job }) => {
           </div>
         )}
       </div>
+
       {/* Job Details and Applicants Modal */}
       {showJobModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -684,6 +690,7 @@ function RecentJobPostings() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { jobs, loading, error } = useSelector((state) => state.jobs);
+
   const [activeJobs, setActiveJobs] = useState([]);
   const [completedJobs, setCompletedJobs] = useState([]);
   const [completedStats, setCompletedStats] = useState(null);
@@ -785,6 +792,7 @@ function RecentJobPostings() {
         <CardContent className="space-y-4">
           {loading && <div>Loading jobs...</div>}
           {error && <div className="text-red-600">{error}</div>}
+
           {activeJobs && activeJobs.length === 0 && !loading && (
             <div className="text-center py-8 text-muted-foreground">
               No active jobs found.

@@ -26,6 +26,9 @@ app.use(express.json());
 app.use(cookieParser());
 if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 
+// Serve uploaded files
+app.use("/uploads", express.static("uploads"));
+
 //api handler
 app.use("/api", apiRouter);
 

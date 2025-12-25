@@ -1,6 +1,13 @@
 import Assessment from "../model/assessment.model.js";
 import AssessmentResult from "../model/assessmentResult.model.js";
 import JobApplication from "../model/jobApplication.model.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import PDFDocument from "pdfkit";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const createAssessment = async (req, res) => {
   try {
@@ -519,4 +526,184 @@ export const submitAssessment = async (req, res) => {
       .status(500)
       .json({ message: "Server error while submitting assessment." });
   }
+};
+
+// Generate PDF for assessment passed students
+export const generateAssessmentPassedStudentsPDF = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verify assessment exists and user is the creator
+    const assessment = await Assessment.findById(id);
+    if (!assessment) {
+      return res.status(404).json({ message: "Assessment not found" });
+    }
+
+    // Only allow TPO who created the assessment
+    if (assessment.createdBy.toString() !== req.user.id) {
+      return res
+        .status(403)
+        .json({ message: "Unauthorized to generate PDF for this assessment" });
+    }
+
+    // Get all passed students
+    const results = await AssessmentResult.find({
+      assessment: id,
+      passed: true,
+    })
+      .populate("student", "fullName email")
+      .sort({ percentage: -1, submittedAt: -1 });
+
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: "No students have passed this assessment yet.",
+      });
+    }
+
+    // Create PDF directory if it doesn't exist
+    const pdfDir = path.join(__dirname, "../../uploads/pdfs");
+    if (!fs.existsSync(pdfDir)) {
+      fs.mkdirSync(pdfDir, { recursive: true });
+    }
+
+    // Generate filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeTitle = assessment.title.replace(/[^a-z0-9]/gi, "_");
+    const filename = `assessment-${safeTitle}-passed-students-${timestamp}.pdf`;
+    const filepath = path.join(pdfDir, filename);
+
+    // Generate PDF
+    await generatePDF(assessment, results, filepath);
+
+    // Return the file URL
+    const pdfUrl = `http://localhost:4000/uploads/pdfs/${filename}`;
+
+    res.status(200).json({
+      message: "File generated successfully",
+      pdfUrl,
+      filename,
+      passedStudentsCount: results.length,
+    });
+  } catch (error) {
+    console.error("Error generating PDF:", error);
+    res.status(500).json({ message: "Server error while generating PDF." });
+  }
+};
+
+// Helper function to generate PDF using PDFKit
+const generatePDF = async (assessment, results, filepath) => {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const stream = fs.createWriteStream(filepath);
+    doc.pipe(stream);
+
+    // Styling Constants
+    const primaryColor = "#2C3E50"; // Dark Navy
+    const accentColor = "#27AE60"; // Success Green
+    const secondaryColor = "#7F8C8D"; // Gray
+
+    // Header Background & Title
+    doc.rect(0, 0, 612, 80).fill(primaryColor);
+    doc
+      .fillColor("#FFFFFF")
+      .fontSize(22)
+      .text("ASSESSMENT RESULTS", 50, 30, { characterSpacing: 2 });
+    doc
+      .fontSize(12)
+      .text("Generated Placement Report", 50, 55, { opacity: 0.8 });
+    doc.moveDown(4);
+
+    // Assessment Info Section
+    doc
+      .fillColor(primaryColor)
+      .fontSize(16)
+      .text("Assessment Details", { underline: true });
+    doc.moveDown(0.5);
+
+    // Draw a thin divider line
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).strokeColor("#EEEEEE").stroke();
+    doc.moveDown(1);
+
+    doc.fillColor(secondaryColor).fontSize(10).text("TITLE");
+    doc
+      .fillColor("#000000")
+      .fontSize(12)
+      .text(`${assessment.title}`)
+      .moveDown(0.5);
+
+    doc.fillColor(secondaryColor).fontSize(10).text("DESCRIPTION");
+    doc
+      .fillColor("#000000")
+      .fontSize(12)
+      .text(`${assessment.description}`)
+      .moveDown(0.5);
+
+    doc.fillColor(secondaryColor).fontSize(10).text("METRICS");
+    doc
+      .fillColor("#000000")
+      .fontSize(11)
+      .text(
+        `Passing Score: ${assessment.passingScore || "N/A"}%  |  Questions: ${
+          assessment.questions.length
+        }  |  Date: ${new Date().toLocaleString()}`
+      );
+    doc.moveDown(2.5);
+
+    // Passed Students Section Header
+    doc
+      .fillColor(primaryColor)
+      .fontSize(16)
+      .text(`Passed Students (${results.length})`, {
+        underline: true,
+      });
+    doc.moveDown(1);
+
+    // Student List
+    results.forEach((result, index) => {
+      // Background row for each student
+      const rowY = doc.y;
+      doc.rect(50, rowY - 5, 500, 75).fill("#F9F9F9");
+
+      doc
+        .fillColor(accentColor)
+        .fontSize(12)
+        .text(
+          `${index + 1}. ${result.student?.fullName || "Unknown"}`,
+          60,
+          rowY
+        );
+
+      doc.fillColor(secondaryColor).fontSize(10);
+      doc.text(`Email: ${result.student?.email || "N/A"}`, 75, doc.y);
+
+      doc
+        .fillColor("#333333")
+        .text(
+          `Score: ${result.score}/${
+            result.totalPoints
+          } (${result.percentage.toFixed(2)}%)`,
+          { indent: 15 }
+        );
+
+      doc.text(
+        `Time Taken: ${result.timeTaken} mins  |  Submitted: ${new Date(
+          result.submittedAt
+        ).toLocaleDateString()}`,
+        { indent: 15 }
+      );
+
+      doc.moveDown(2); // Spacing for next entry
+    });
+
+    // Footer
+    const pages = doc.bufferedPageRange();
+    doc
+      .fillColor(secondaryColor)
+      .fontSize(10)
+      .text("End of Official Report", 50, 750, { align: "center" });
+
+    doc.end();
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+  });
 };
