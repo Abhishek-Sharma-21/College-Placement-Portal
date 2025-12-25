@@ -1,5 +1,6 @@
 import Assessment from "../model/assessment.model.js";
 import AssessmentResult from "../model/assessmentResult.model.js";
+import JobApplication from "../model/jobApplication.model.js";
 
 export const createAssessment = async (req, res) => {
   try {
@@ -478,8 +479,30 @@ export const submitAssessment = async (req, res) => {
       await result.save();
     }
 
-    await result.populate("assessment", "title");
+    await result.populate("assessment", "title job");
     await result.populate("student", "fullName email");
+
+    // If student passed and assessment is linked to a job, automatically shortlist them
+    if (passed && assessment.job) {
+      try {
+        const jobApplication = await JobApplication.findOne({
+          job: assessment.job,
+          student: req.user.id,
+        });
+
+        if (jobApplication && jobApplication.status !== "accepted") {
+          // Only update if not already accepted
+          jobApplication.status = "shortlisted";
+          await jobApplication.save();
+          console.log(
+            `Student ${req.user.id} automatically shortlisted for job ${assessment.job} after passing assessment`
+          );
+        }
+      } catch (jobAppError) {
+        // Log error but don't fail the assessment submission
+        console.error("Error auto-shortlisting student for job:", jobAppError);
+      }
+    }
 
     res.status(200).json({
       message: "Assessment submitted successfully!",
