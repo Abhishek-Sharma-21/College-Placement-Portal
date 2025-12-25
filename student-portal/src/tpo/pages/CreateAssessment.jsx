@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Plus,
   Trash2,
@@ -20,6 +21,15 @@ import {
   History,
   Clock,
   CheckCircle2,
+  Edit,
+  MoreVertical,
+  Users,
+  BarChart3,
+  FileText,
+  ArrowLeft,
+  AlertCircle,
+  X,
+  XCircle,
 } from "lucide-react";
 
 function CreateAssessment() {
@@ -33,7 +43,6 @@ function CreateAssessment() {
     difficulty: "",
     category: "",
     instructions: "",
-    job: "",
   });
 
   const [questions, setQuestions] = useState([
@@ -53,29 +62,17 @@ function CreateAssessment() {
   // Default to "create" tab since this is a create assessment page
   const [activeTab, setActiveTab] = useState("create");
   const [assessmentHistory, setAssessmentHistory] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [editingAssessmentId, setEditingAssessmentId] = useState(null);
+  const [viewingResultsId, setViewingResultsId] = useState(null);
+  const [resultsData, setResultsData] = useState(null);
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [selectedResult, setSelectedResult] = useState(null);
+  const [showAnswerDetails, setShowAnswerDetails] = useState(false);
 
-  // Load assessment history and jobs from backend on mount
+  // Load assessment history from backend on mount
   useEffect(() => {
     fetchAssessments();
-    fetchJobs();
   }, []);
-
-  const fetchJobs = async () => {
-    try {
-      setLoadingJobs(true);
-      const response = await axios.get("http://localhost:4000/api/jobs", {
-        withCredentials: true,
-      });
-      // Only show active jobs
-      setJobs(response.data.filter((job) => job.status === "active"));
-    } catch (err) {
-      console.error("Error fetching jobs:", err);
-    } finally {
-      setLoadingJobs(false);
-    }
-  };
 
   const fetchAssessments = async () => {
     try {
@@ -98,6 +95,32 @@ function CreateAssessment() {
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
     setError(null);
+  };
+
+  const startNewAssessment = () => {
+    setEditingAssessmentId(null);
+    setForm({
+      title: "",
+      description: "",
+      duration: "",
+      passingScore: "",
+      startDate: "",
+      endDate: "",
+      difficulty: "",
+      category: "",
+      instructions: "",
+    });
+    setQuestions([
+      {
+        id: 1,
+        question: "",
+        type: "multiple-choice",
+        options: ["", "", "", ""],
+        correctAnswer: null,
+        points: 1,
+      },
+    ]);
+    setActiveTab("create");
   };
 
   const handleQuestionChange = (questionId, field, value) => {
@@ -197,15 +220,26 @@ function CreateAssessment() {
         })),
       };
 
-      await axios.post(
-        "http://localhost:4000/api/assessments",
-        assessmentData,
-        {
-          withCredentials: true,
-        }
-      );
-
-      setSuccess("Assessment created successfully!");
+      // If editing an existing assessment, use PUT, otherwise use POST
+      if (editingAssessmentId) {
+        await axios.put(
+          `http://localhost:4000/api/assessments/${editingAssessmentId}`,
+          assessmentData,
+          {
+            withCredentials: true,
+          }
+        );
+        setSuccess("Assessment updated successfully!");
+      } else {
+        await axios.post(
+          "http://localhost:4000/api/assessments",
+          assessmentData,
+          {
+            withCredentials: true,
+          }
+        );
+        setSuccess("Assessment created successfully!");
+      }
 
       // Refresh the assessment list
       await fetchAssessments();
@@ -215,7 +249,7 @@ function CreateAssessment() {
         setActiveTab("history");
       }, 2000);
 
-      // Reset form
+      // Reset form and clear editing state
       setForm({
         title: "",
         description: "",
@@ -226,7 +260,6 @@ function CreateAssessment() {
         difficulty: "",
         category: "",
         instructions: "",
-        job: "",
       });
       setQuestions([
         {
@@ -238,11 +271,15 @@ function CreateAssessment() {
           points: 1,
         },
       ]);
+      setEditingAssessmentId(null);
     } catch (err) {
       const errorMsg =
-        err.response?.data?.message || "Failed to create assessment.";
+        err.response?.data?.message ||
+        (editingAssessmentId
+          ? "Failed to update assessment."
+          : "Failed to create assessment.");
       setError(errorMsg);
-      console.error("Error creating assessment:", err);
+      console.error("Error saving assessment:", err);
     } finally {
       setLoading(false);
     }
@@ -288,6 +325,9 @@ function CreateAssessment() {
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
 
+    // Store the assessment ID for editing
+    setEditingAssessmentId(assessment._id || assessment.id);
+
     setForm({
       title: assessment.title || "",
       description: assessment.description || "",
@@ -298,7 +338,6 @@ function CreateAssessment() {
       difficulty: assessment.difficulty || "",
       category: assessment.category || "",
       instructions: assessment.instructions || "",
-      job: assessment.job?._id || assessment.job || "",
     });
     setQuestions(
       assessment.questions?.map((q, idx) => ({
@@ -325,6 +364,32 @@ function CreateAssessment() {
   // Calculate total points for preview
   const totalPoints = questions.reduce((sum, q) => sum + (q.points || 1), 0);
 
+  const fetchAssessmentResults = async (assessmentId) => {
+    try {
+      setLoadingResults(true);
+      const response = await axios.get(
+        `http://localhost:4000/api/assessments/${assessmentId}/results`,
+        { withCredentials: true }
+      );
+      setResultsData(response.data);
+      setViewingResultsId(assessmentId);
+      setActiveTab("results");
+    } catch (err) {
+      console.error("Error fetching results:", err);
+      setError(
+        err.response?.data?.message || "Failed to load assessment results"
+      );
+    } finally {
+      setLoadingResults(false);
+    }
+  };
+
+  const closeResultsView = () => {
+    setViewingResultsId(null);
+    setResultsData(null);
+    setActiveTab("history");
+  };
+
   return (
     <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-lg">
       <h2 className="text-3xl font-bold mb-6 text-blue-700">
@@ -332,8 +397,21 @@ function CreateAssessment() {
       </h2>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="create" className="flex items-center gap-2">
+        <TabsList
+          className={`grid w-full mb-6 ${
+            viewingResultsId ? "grid-cols-4" : "grid-cols-3"
+          }`}
+        >
+          <TabsTrigger
+            value="create"
+            className="flex items-center gap-2"
+            onClick={() => {
+              // If clicking create tab and form is empty, start new assessment
+              if (!form.title && !editingAssessmentId) {
+                startNewAssessment();
+              }
+            }}
+          >
             <Plus className="h-4 w-4" />
             Create
           </TabsTrigger>
@@ -345,6 +423,12 @@ function CreateAssessment() {
             <History className="h-4 w-4" />
             History ({assessmentHistory.length})
           </TabsTrigger>
+          {viewingResultsId && (
+            <TabsTrigger value="results" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Results
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Create Tab */}
@@ -384,44 +468,6 @@ function CreateAssessment() {
                   placeholder="Describe what this assessment covers..."
                   className="w-full"
                 />
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-2">
-                  Link to Job (Optional)
-                </label>
-                <Select
-                  value={form.job}
-                  onValueChange={(value) =>
-                    setForm({ ...form, job: value === "none" ? "" : value })
-                  }
-                  disabled={loadingJobs}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue
-                      placeholder={
-                        loadingJobs
-                          ? "Loading jobs..."
-                          : "Select a job (optional)"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      No Job (General Assessment)
-                    </SelectItem>
-                    {jobs.map((job) => (
-                      <SelectItem key={job._id} value={job._id}>
-                        {job.title} - {job.company}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {form.job && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    This assessment will be linked to the selected job
-                  </p>
-                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -712,7 +758,13 @@ function CreateAssessment() {
                 disabled={loading}
               >
                 <Save className="h-4 w-4 mr-2" />
-                {loading ? "Creating..." : "Create Assessment"}
+                {loading
+                  ? editingAssessmentId
+                    ? "Updating..."
+                    : "Creating..."
+                  : editingAssessmentId
+                  ? "Update Assessment"
+                  : "Create Assessment"}
               </Button>
             </div>
           </form>
@@ -742,12 +794,6 @@ function CreateAssessment() {
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-2 text-sm text-gray-600">
-                      {form.job && jobs.find((j) => j._id === form.job) && (
-                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full">
-                          Job: {jobs.find((j) => j._id === form.job)?.title} -{" "}
-                          {jobs.find((j) => j._id === form.job)?.company}
-                        </span>
-                      )}
                       {form.difficulty && (
                         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full capitalize">
                           {form.difficulty}
@@ -965,11 +1011,23 @@ function CreateAssessment() {
                               {assessment.difficulty}
                             </span>
                           )}
-                          {assessment.job && (
-                            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
-                              Job: {assessment.job?.title || "Linked Job"}
-                            </span>
-                          )}
+                          <Badge
+                            variant={
+                              assessment.status === "live"
+                                ? "default"
+                                : assessment.status === "published"
+                                ? "secondary"
+                                : "outline"
+                            }
+                            className={
+                              assessment.status === "live"
+                                ? "bg-green-100 text-green-700"
+                                : ""
+                            }
+                          >
+                            {assessment.status.charAt(0).toUpperCase() +
+                              assessment.status.slice(1)}
+                          </Badge>
                         </div>
                       </div>
                     </div>
@@ -983,6 +1041,19 @@ function CreateAssessment() {
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Load for Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        onClick={() =>
+                          fetchAssessmentResults(
+                            assessment._id || assessment.id
+                          )
+                        }
+                      >
+                        <BarChart3 className="h-4 w-4 mr-2" />
+                        View Results
                       </Button>
                       <Button
                         variant="outline"
@@ -1021,7 +1092,6 @@ function CreateAssessment() {
                             difficulty: assessment.difficulty || "",
                             category: assessment.category || "",
                             instructions: assessment.instructions || "",
-                            job: assessment.job?._id || assessment.job || "",
                           });
                           setQuestions(
                             assessment.questions?.map((q, idx) => ({
@@ -1042,6 +1112,101 @@ function CreateAssessment() {
                         <Eye className="h-4 w-4 mr-2" />
                         Preview
                       </Button>
+                      {/* Status Management */}
+                      {assessment.status === "live" ? (
+                        <>
+                          <Badge className="bg-green-100 text-green-700">
+                            Live
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  "Are you sure you want to change this assessment from live to draft? Students will no longer be able to access it."
+                                )
+                              ) {
+                                return;
+                              }
+                              try {
+                                await axios.put(
+                                  `http://localhost:4000/api/assessments/${
+                                    assessment._id || assessment.id
+                                  }`,
+                                  { status: "draft" },
+                                  { withCredentials: true }
+                                );
+                                setSuccess("Assessment changed to draft!");
+                                await fetchAssessments();
+                              } catch (err) {
+                                setError(
+                                  err.response?.data?.message ||
+                                    "Failed to change assessment status"
+                                );
+                              }
+                            }}
+                          >
+                            <Edit className="h-4 w-4 mr-2" />
+                            Make Draft
+                          </Button>
+                        </>
+                      ) : assessment.status === "draft" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                          onClick={async () => {
+                            try {
+                              await axios.put(
+                                `http://localhost:4000/api/assessments/${
+                                  assessment._id || assessment.id
+                                }`,
+                                { status: "live" },
+                                { withCredentials: true }
+                              );
+                              setSuccess("Assessment is now live!");
+                              await fetchAssessments();
+                            } catch (err) {
+                              setError(
+                                err.response?.data?.message ||
+                                  "Failed to make assessment live"
+                              );
+                            }
+                          }}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Make Live
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                          onClick={async () => {
+                            try {
+                              await axios.put(
+                                `http://localhost:4000/api/assessments/${
+                                  assessment._id || assessment.id
+                                }`,
+                                { status: "live" },
+                                { withCredentials: true }
+                              );
+                              setSuccess("Assessment is now live!");
+                              await fetchAssessments();
+                            } catch (err) {
+                              setError(
+                                err.response?.data?.message ||
+                                  "Failed to make assessment live"
+                              );
+                            }
+                          }}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-2" />
+                          Make Live
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -1060,7 +1225,377 @@ function CreateAssessment() {
             )}
           </div>
         </TabsContent>
+
+        {/* Results Tab */}
+        {viewingResultsId && (
+          <TabsContent value="results">
+            {loadingResults ? (
+              <div className="text-center py-12 text-gray-500">
+                <p>Loading results...</p>
+              </div>
+            ) : resultsData ? (
+              <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-bold text-gray-900">
+                      {resultsData.assessment.title}
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Assessment Results & Analytics
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={closeResultsView}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to History
+                  </Button>
+                </div>
+
+                {/* Statistics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-600">
+                            Total Students
+                          </p>
+                          <p className="text-3xl font-bold text-gray-900 mt-2">
+                            {resultsData.statistics.totalStudents}
+                          </p>
+                        </div>
+                        <Users className="h-8 w-8 text-blue-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-600">
+                            Passed
+                          </p>
+                          <p className="text-3xl font-bold text-green-600 mt-2">
+                            {resultsData.statistics.passedCount}
+                          </p>
+                        </div>
+                        <CheckCircle2 className="h-8 w-8 text-green-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-600">
+                            Failed
+                          </p>
+                          <p className="text-3xl font-bold text-red-600 mt-2">
+                            {resultsData.statistics.failedCount}
+                          </p>
+                        </div>
+                        <AlertCircle className="h-8 w-8 text-red-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-600">
+                            Average Score
+                          </p>
+                          <p className="text-3xl font-bold text-blue-600 mt-2">
+                            {resultsData.statistics.averageScore}%
+                          </p>
+                        </div>
+                        <BarChart3 className="h-8 w-8 text-blue-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Students Results Table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Student Submissions ({resultsData.results.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {resultsData.results.length === 0 ? (
+                      <div className="text-center py-12 text-gray-500">
+                        <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No students have taken this assessment yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                                Student
+                              </th>
+                              <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                                Email
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Score
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Percentage
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Status
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Time Taken
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Submitted
+                              </th>
+                              <th className="text-center py-3 px-4 font-semibold text-gray-700">
+                                Actions
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resultsData.results.map((result) => (
+                              <tr
+                                key={result._id}
+                                className="border-b hover:bg-gray-50"
+                              >
+                                <td className="py-3 px-4">
+                                  {result.student?.fullName || "Unknown"}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600">
+                                  {result.student?.email || "-"}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <span className="font-semibold">
+                                    {result.score}
+                                  </span>
+                                  <span className="text-gray-500 text-sm">
+                                    /{result.totalPoints}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <span
+                                    className={`font-semibold ${
+                                      result.percentage >=
+                                      (resultsData.assessment.passingScore || 0)
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {result.percentage.toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <Badge
+                                    variant={
+                                      result.passed ? "default" : "destructive"
+                                    }
+                                  >
+                                    {result.passed ? "Passed" : "Failed"}
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-4 text-center text-sm text-gray-600">
+                                  {result.timeTaken} min
+                                </td>
+                                <td className="py-3 px-4 text-center text-sm text-gray-600">
+                                  {result.submittedAt
+                                    ? new Date(
+                                        result.submittedAt
+                                      ).toLocaleString()
+                                    : "-"}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedResult(result);
+                                      setShowAnswerDetails(true);
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4 mr-1" />
+                                    View Answers
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                <p>No results data available</p>
+              </div>
+            )}
+          </TabsContent>
+        )}
       </Tabs>
+
+      {/* Answer Details Modal */}
+      {showAnswerDetails && selectedResult && resultsData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex items-center justify-between sticky top-0 bg-white z-10 border-b">
+              <CardTitle>
+                {selectedResult.student?.fullName || "Student"}'s Answers
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowAnswerDetails(false);
+                  setSelectedResult(null);
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="pt-6 space-y-6">
+              {/* Student Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="text-sm text-gray-600">Score</p>
+                  <p className="text-xl font-bold">
+                    {selectedResult.score}/{selectedResult.totalPoints}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Percentage</p>
+                  <p
+                    className={`text-xl font-bold ${
+                      selectedResult.passed ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {selectedResult.percentage.toFixed(1)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Status</p>
+                  <Badge
+                    variant={selectedResult.passed ? "default" : "destructive"}
+                  >
+                    {selectedResult.passed ? "Passed" : "Failed"}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Time Taken</p>
+                  <p className="text-lg font-semibold">
+                    {selectedResult.timeTaken} min
+                  </p>
+                </div>
+              </div>
+
+              {/* Questions and Answers */}
+              <div className="space-y-4">
+                {resultsData.assessment.questions?.map((question, qIndex) => {
+                  const answer = selectedResult.answers.find(
+                    (a) => a.questionIndex === qIndex
+                  );
+                  const selectedOptionIndex = answer?.selectedAnswer;
+                  const isCorrect = answer?.isCorrect || false;
+                  const pointsEarned = answer?.pointsEarned || 0;
+
+                  return (
+                    <Card
+                      key={qIndex}
+                      className={`${
+                        isCorrect ? "border-green-500" : "border-red-500"
+                      }`}
+                    >
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-lg">
+                            Question {qIndex + 1} ({question.points} point
+                            {question.points !== 1 ? "s" : ""})
+                          </CardTitle>
+                          <Badge
+                            variant={isCorrect ? "default" : "destructive"}
+                          >
+                            {isCorrect
+                              ? `Correct (+${pointsEarned})`
+                              : `Incorrect (0/${question.points})`}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <p className="font-medium text-gray-800">
+                          {question.question}
+                        </p>
+                        <div className="space-y-2">
+                          {question.options.map((option, optIndex) => {
+                            const isSelected = selectedOptionIndex === optIndex;
+                            const isCorrectAnswer =
+                              question.correctAnswer === optIndex;
+
+                            return (
+                              <div
+                                key={optIndex}
+                                className={`p-3 rounded-lg border-2 ${
+                                  isCorrectAnswer
+                                    ? "border-green-500 bg-green-50"
+                                    : isSelected && !isCorrectAnswer
+                                    ? "border-red-500 bg-red-50"
+                                    : "border-gray-200"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {isCorrectAnswer && (
+                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                  )}
+                                  {isSelected && !isCorrectAnswer && (
+                                    <XCircle className="h-5 w-5 text-red-600" />
+                                  )}
+                                  <span
+                                    className={`flex-1 ${
+                                      isSelected
+                                        ? "font-semibold"
+                                        : "text-gray-700"
+                                    }`}
+                                  >
+                                    {String.fromCharCode(65 + optIndex)}.{" "}
+                                    {option}
+                                  </span>
+                                  {isCorrectAnswer && (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-green-100 text-green-700 border-green-500"
+                                    >
+                                      Correct Answer
+                                    </Badge>
+                                  )}
+                                  {isSelected && (
+                                    <Badge variant="outline">
+                                      Student's Answer
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

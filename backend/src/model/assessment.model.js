@@ -82,7 +82,7 @@ const AssessmentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["draft", "published", "archived"],
+      enum: ["draft", "published", "live", "archived"],
       default: "draft",
     },
   },

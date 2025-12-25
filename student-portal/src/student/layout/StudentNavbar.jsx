@@ -12,6 +12,7 @@ import {
   FaUser,
   FaSignOutAlt,
   FaFolderOpen,
+  FaClipboardList,
 } from "react-icons/fa";
 import { ROUTES } from "@/Routes/studentRout/routes";
 
@@ -19,6 +20,7 @@ const navItems = [
   { name: "Dashboard", icon: <FaThLarge />, to: ROUTES.DASHBOARD },
   { name: "All Jobs", icon: <FaBriefcase />, to: ROUTES.ALL_JOBS },
   { name: "My Jobs", icon: <FaFolderOpen />, to: ROUTES.MY_JOBS },
+  { name: "Assessments", icon: <FaClipboardList />, to: ROUTES.ASSESSMENTS },
   { name: "Announcements", icon: <FaTasks />, to: ROUTES.ANNOUNCEMENTS },
   { name: "Profile", icon: <FaUser />, to: ROUTES.PROFILE },
 ];

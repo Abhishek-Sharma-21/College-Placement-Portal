@@ -11,6 +11,12 @@ const MyJobs = lazy(() => import("@/student/pages/jobs/MyJobs"));
 const TpoAnnouncements = lazy(() =>
   import("@/student/pages/announcements/TpoAnnouncements")
 );
+const Assessments = lazy(() =>
+  import("@/student/pages/assessments/Assessments")
+);
+const TakeAssessment = lazy(() =>
+  import("@/student/pages/assessments/TakeAssessment")
+);
 const Login = lazy(() => import("@/features/auth/Login"));
 const Register = lazy(() => import("@/features/auth/Register"));
 const Profile = lazy(() => import("@/student/pages/profile/Profile"));
@@ -35,6 +41,8 @@ export default function StudentRoutes() {
           <Route path={ROUTES.DASHBOARD} element={<DashboardContent />} />
           <Route path={ROUTES.ALL_JOBS} element={<AllJobs />} />
           <Route path={ROUTES.MY_JOBS} element={<MyJobs />} />
+          <Route path={ROUTES.ASSESSMENTS} element={<Assessments />} />
+          <Route path="/assessments/:id/take" element={<TakeAssessment />} />
           <Route path={ROUTES.ANNOUNCEMENTS} element={<TpoAnnouncements />} />
           <Route path={ROUTES.PROFILE} element={<Profile />} />
         </Route>
