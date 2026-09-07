@@ -10,27 +10,20 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/Routes/studentRout/routes.jsx";
-// You will need axios to make the API call
-import axios from "axios";
-import API_URL from "../../lib/api";
+import { TPO_ROUTES } from "@/Routes/tpoRout/TpoRoutes";
+import { useDispatch } from "react-redux";
+import { loginSuccess } from "@/store/slices/authSlice";
+import { useRegisterMutation } from "@/store/api/authApiSlice";
 
 function Register() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const [registerUser, { isLoading }] = useRegisterMutation();
 
-  // State for which tab is active
   const [activeTab, setActiveTab] = useState("student");
-
-  // State for error messages
   const [error, setError] = useState(null);
 
   // === Student Form State ===
@@ -43,44 +36,28 @@ function Register() {
   const [tpoEmail, setTpoEmail] = useState("");
   const [tpoPassword, setTpoPassword] = useState("");
 
-  // This one function handles both forms
   const handleSubmit = async (e) => {
-    e.preventDefault(); // Prevent default form submission
-    setError(null); // Clear previous errors
+    e.preventDefault();
+    setError(null);
 
     let data;
-    let url = `${API_URL}/auth/register`; // Your backend URL
 
     if (activeTab === "student") {
-      // --- Student Data ---
-      // Here you would add validation
       if (!studentName || !studentEmail || !studentPassword) {
         setError("Please fill out all required student fields.");
         return;
       }
-
       data = {
         fullName: studentName,
         email: studentEmail,
         password: studentPassword,
         role: "student",
-        // These fields are not in your basic schema,
-        // so you might send them to a separate "onboarding" route
-        // or add them to your schema
-
-        // studentDetails: {
-        //   branch: studentBranch,
-        //   cgpa: studentCgpa,
-        //   graduationYear: studentGradYear
-        // }
       };
     } else {
-      // --- TPO Data ---
       if (!tpoName || !tpoEmail || !tpoPassword) {
         setError("Please fill out all required TPO fields.");
         return;
       }
-
       data = {
         fullName: tpoName,
         email: tpoEmail,
@@ -89,22 +66,36 @@ function Register() {
       };
     }
 
-    // --- API Call ---
     try {
-      // Send the data to your single register endpoint
-      const response = await axios.post(url, data);
+      const response = await registerUser(data).unwrap();
 
-      // On success:
-      console.log(response.data.message); // "User registered successfully."
+      // Dispatch successful login to store
+      dispatch(
+        loginSuccess({
+          user: {
+            _id: response.id,
+            id: response.id,
+            fullName: response.fullName,
+            email: response.email,
+            role: response.role,
+          },
+          token: "cookie",
+        })
+      );
 
-      // So, let's just redirect them to the login page.
-      navigate(ROUTES.LOGIN);
-    } catch (apiError) {
-      // If API call fails (e.g., email already exists)
-      if (apiError.response && apiError.response.data) {
-        setError(apiError.response.data.message);
+      // Redirect directly to dashboard by role
+      if (response.role === "tpo") {
+        navigate(TPO_ROUTES.DASHBOARD);
       } else {
-        setError("Registration failed. Please try again.");
+        navigate(ROUTES.DASHBOARD);
+      }
+    } catch (apiError) {
+      // Map validation errors if returned by Zod
+      if (apiError.data?.errors && Array.isArray(apiError.data.errors)) {
+        const errorDetails = apiError.data.errors.map(err => err.message).join(" ");
+        setError(errorDetails);
+      } else {
+        setError(apiError.data?.message || "Registration failed. Please try again.");
       }
     }
   };
@@ -121,21 +112,15 @@ function Register() {
         <Tabs
           defaultValue="student"
           className="w-full"
-          onValueChange={setActiveTab} // Update activeTab state on change
+          onValueChange={setActiveTab}
         >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="student">Student</TabsTrigger>
             <TabsTrigger value="tpo">TPO</TabsTrigger>
           </TabsList>
 
-          {/* ==========================
-            STUDENT FORM
-        ==========================
-        */}
           <TabsContent value="student">
             <form onSubmit={handleSubmit}>
-              {" "}
-              {/* Use the onSubmit handler */}
               <Card>
                 <CardHeader>
                   <CardTitle>Student Registration</CardTitle>
@@ -151,6 +136,7 @@ function Register() {
                       value={studentName}
                       onChange={(e) => setStudentName(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -162,6 +148,7 @@ function Register() {
                       value={studentEmail}
                       onChange={(e) => setStudentEmail(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -172,15 +159,16 @@ function Register() {
                       value={studentPassword}
                       onChange={(e) => setStudentPassword(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col">
                   {error && (
-                    <p className="text-red-500 text-sm mb-4">{error}</p>
+                    <p className="text-red-500 text-sm mb-4 text-center">{error}</p>
                   )}
-                  <Button className="w-full" type="submit">
-                    Register
+                  <Button className="w-full" type="submit" disabled={isLoading}>
+                    {isLoading ? "Registering..." : "Register"}
                   </Button>
                   <div className="mt-4 text-center text-sm">
                     Already have an account?{" "}
@@ -193,14 +181,8 @@ function Register() {
             </form>
           </TabsContent>
 
-          {/* ==========================
-              TPO FORM
-        ==========================
-        */}
           <TabsContent value="tpo">
             <form onSubmit={handleSubmit}>
-              {" "}
-              {/* Use the SAME handler */}
               <Card>
                 <CardHeader>
                   <CardTitle>TPO Registration</CardTitle>
@@ -218,6 +200,7 @@ function Register() {
                       value={tpoName}
                       onChange={(e) => setTpoName(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-3">
@@ -229,6 +212,7 @@ function Register() {
                       value={tpoEmail}
                       onChange={(e) => setTpoEmail(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-3">
@@ -239,16 +223,16 @@ function Register() {
                       value={tpoPassword}
                       onChange={(e) => setTpoPassword(e.target.value)}
                       required
+                      disabled={isLoading}
                     />
                   </div>
-                  {/* Removed confirm password for TPO */}
                 </CardContent>
                 <CardFooter className="flex-col">
                   {error && (
-                    <p className="text-red-500 text-sm mb-4">{error}</p>
+                    <p className="text-red-500 text-sm mb-4 text-center">{error}</p>
                   )}
-                  <Button className="w-full" type="submit">
-                    Register
+                  <Button className="w-full" type="submit" disabled={isLoading}>
+                    {isLoading ? "Registering..." : "Register"}
                   </Button>
                   <div className="mt-4 text-center text-sm">
                     Already have an account?{" "}

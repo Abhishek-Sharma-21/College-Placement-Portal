@@ -148,7 +148,37 @@ const Assessments = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {!timeCheck.valid ? (
+                  {assessment.results?.[0] ? (
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-blue-600">
+                          <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                          <span className="text-sm font-bold">Assessment Attempted</span>
+                        </div>
+                        <p className="text-xs text-slate-500 font-semibold">
+                          Score: <strong className="text-slate-700 font-extrabold">{assessment.results[0].score} / {assessment.results[0].totalPoints}</strong> ({assessment.results[0].percentage.toFixed(1)}%)
+                        </p>
+                        {assessment.results[0].warnings > 0 && (
+                          <p className="text-[10px] text-red-500 font-bold">
+                            ⚠️ Screen violations logged during test: {assessment.results[0].warnings}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <Badge
+                          variant={assessment.results[0].passed ? "default" : "destructive"}
+                          className={`text-xs px-2.5 py-1 uppercase tracking-wider font-extrabold rounded-full ${
+                            assessment.results[0].passed ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-red-100 text-red-700 hover:bg-red-100"
+                          }`}
+                        >
+                          {assessment.results[0].passed ? "★ Passed" : "✗ Failed"}
+                        </Badge>
+                        <Button disabled className="bg-slate-250 text-slate-400 cursor-not-allowed text-xs font-bold rounded-xl h-10 px-4">
+                          Completed
+                        </Button>
+                      </div>
+                    </div>
+                  ) : !timeCheck.valid ? (
                     <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <div className="flex items-start gap-2">
                         <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />

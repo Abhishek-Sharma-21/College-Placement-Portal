@@ -21,6 +21,7 @@ const TakeAssessment = lazy(
 const Login = lazy(() => import("@/features/auth/Login"));
 const Register = lazy(() => import("@/features/auth/Register"));
 const Profile = lazy(() => import("@/student/pages/profile/Profile"));
+const Interviews = lazy(() => import("@/student/pages/interviews/Interviews"));
 
 export default function StudentRoutes() {
   return (
@@ -52,6 +53,7 @@ export default function StudentRoutes() {
           <Route path="/assessments/:id/take" element={<TakeAssessment />} />
           <Route path={ROUTES.ANNOUNCEMENTS} element={<TpoAnnouncements />} />
           <Route path={ROUTES.PROFILE} element={<Profile />} />
+          <Route path={ROUTES.INTERVIEWS} element={<Interviews />} />
         </Route>
 
         {/* Auth routes (no persistent layout) */}

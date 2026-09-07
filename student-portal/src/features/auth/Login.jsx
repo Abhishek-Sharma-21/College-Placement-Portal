@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,53 +17,42 @@ import { ROUTES } from "@/Routes/studentRout/routes.jsx";
 import TPO_ROUTES from "../../Routes/tpoRout/TpoRoutes";
 import axios from "axios";
 import API_URL from "@/lib/api";
-import {
-  loginStart,
-  loginSuccess,
-  loginFailure,
-  clearError,
-} from "@/store/slices/authSlice";
+import { loginSuccess } from "@/store/slices/authSlice";
+import { useLoginMutation } from "@/store/api/authApiSlice";
 import {
   fetchProfileStart,
   fetchProfileSuccess,
   fetchProfileFailure,
 } from "@/store/slices/studentProfileSlice";
 
-// Redux imports are removed
-
 function Login() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { loading, error } = useSelector((state) => state.auth);
+  const [loginUser, { isLoading }] = useLoginMutation();
 
-  // --- State for Forms ---
   const [studentEmail, setStudentEmail] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
   const [tpoEmail, setTpoEmail] = useState("");
   const [tpoPassword, setTpoPassword] = useState("");
 
-  // --- Local UI-only state ---
+  const [error, setError] = useState(null);
 
-  // Add this function
-  const fetchProfile = async (dispatch) => {
+  const fetchProfile = async () => {
     dispatch(fetchProfileStart());
     try {
       const response = await axios.get(`${API_URL}/profile/profile`, {
         withCredentials: true,
       });
       dispatch(fetchProfileSuccess(response.data.profile));
-    } catch (error) {
-      const message =
-        error.response?.data?.message || "Failed to fetch profile";
+    } catch (err) {
+      const message = err.response?.data?.message || "Failed to fetch profile";
       dispatch(fetchProfileFailure(message));
     }
   };
 
-  // --- Generic Submit Handler ---
   const handleLogin = async (e, role) => {
     e.preventDefault();
-    dispatch(loginStart());
-    if (error) dispatch(clearError());
+    setError(null);
 
     let data;
     if (role === "student") {
@@ -77,36 +66,34 @@ function Login() {
     }
 
     try {
-      // 1. Make the API call
-      // 'withCredentials: true' is CRITICAL for httpOnly cookies
-      const response = await axios.post(`${API_URL}/auth/login`, data, {
-        withCredentials: true,
-      });
+      const response = await loginUser(data).unwrap();
 
-      const loggedUser = response.data?.user || response.data;
-      // 2. On success, update redux auth state
+      // Update Redux auth state
       dispatch(
         loginSuccess({
-          user: response.data, // {_id, fullName, email, role}
-          token: null, // httpOnly cookie set by backend
-        }),
+          user: response,
+          token: "cookie",
+        })
       );
 
-      // 3. Fetch the profile right after login!
-      if (loggedUser?.role === "student") {
-        await fetchProfile(dispatch);
+      // Fetch student profile fresh
+      if (response.role === "student") {
+        await fetchProfile();
       }
 
-      if (loggedUser?.role === "tpo") {
+      if (response.role === "tpo") {
         navigate(TPO_ROUTES.DASHBOARD);
       } else {
         navigate(ROUTES.DASHBOARD || "/");
       }
     } catch (apiError) {
-      // 4. Handle errors (like "Invalid credentials")
-      const message =
-        apiError?.response?.data?.message || "Login failed. Please try again.";
-      dispatch(loginFailure(message));
+      // Map validation errors if returned by Zod
+      if (apiError.data?.errors && Array.isArray(apiError.data.errors)) {
+        const errorDetails = apiError.data.errors.map(err => err.message).join(" ");
+        setError(errorDetails);
+      } else {
+        setError(apiError.data?.message || "Login failed. Please check your credentials.");
+      }
     }
   };
 
@@ -125,9 +112,6 @@ function Login() {
             <TabsTrigger value="tpo">TPO</TabsTrigger>
           </TabsList>
 
-          {/* ==========================
-                STUDENT LOGIN FORM
-          ========================== */}
           <TabsContent value="student">
             <form onSubmit={(e) => handleLogin(e, "student")}>
               <Card>
@@ -146,10 +130,11 @@ function Login() {
                       placeholder="your.email@example.com"
                       value={studentEmail}
                       onChange={(e) => {
-                        if (error) dispatch(clearError());
+                        setError(null);
                         setStudentEmail(e.target.value);
                       }}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-3">
@@ -159,19 +144,20 @@ function Login() {
                       type="password"
                       value={studentPassword}
                       onChange={(e) => {
-                        if (error) dispatch(clearError());
+                        setError(null);
                         setStudentPassword(e.target.value);
                       }}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col">
                   {error && (
-                    <p className="text-red-500 text-sm mb-4">{error}</p>
+                    <p className="text-red-500 text-sm mb-4 text-center">{error}</p>
                   )}
-                  <Button className="w-full" type="submit" disabled={loading}>
-                    {loading ? "Signing In..." : "Login"}
+                  <Button className="w-full" type="submit" disabled={isLoading}>
+                    {isLoading ? "Signing In..." : "Login"}
                   </Button>
                   <div className="mt-4 text-center text-sm">
                     Don&apos;t have an account?{" "}
@@ -184,9 +170,6 @@ function Login() {
             </form>
           </TabsContent>
 
-          {/* ==========================
-                TPO LOGIN FORM
-          ========================== */}
           <TabsContent value="tpo">
             <form onSubmit={(e) => handleLogin(e, "tpo")}>
               <Card>
@@ -205,10 +188,11 @@ function Login() {
                       placeholder="tpo.email@example.com"
                       value={tpoEmail}
                       onChange={(e) => {
-                        if (error) dispatch(clearError());
+                        setError(null);
                         setTpoEmail(e.target.value);
                       }}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                   <div className="grid gap-3">
@@ -218,19 +202,20 @@ function Login() {
                       type="password"
                       value={tpoPassword}
                       onChange={(e) => {
-                        if (error) dispatch(clearError());
+                        setError(null);
                         setTpoPassword(e.target.value);
                       }}
                       required
+                      disabled={isLoading}
                     />
                   </div>
                 </CardContent>
                 <CardFooter className="flex-col">
                   {error && (
-                    <p className="text-red-500 text-sm mb-4">{error}</p>
+                    <p className="text-red-500 text-sm mb-4 text-center">{error}</p>
                   )}
-                  <Button className="w-full" type="submit" disabled={loading}>
-                    {loading ? "Signing In..." : "Login"}
+                  <Button className="w-full" type="submit" disabled={isLoading}>
+                    {isLoading ? "Signing In..." : "Login"}
                   </Button>
                   <div className="mt-4 text-center text-sm">
                     Don&apos;t have an account?{" "}

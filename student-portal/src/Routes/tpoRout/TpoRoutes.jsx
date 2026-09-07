@@ -5,6 +5,8 @@ export const TPO_ROUTES = {
   MANAGE_STUDENTS: "/tpo/students",
   PROFILE: "/tpo/profile",
   ANNOUNCEMENTS: "/tpo/announcements",
+  MANAGE_INTERVIEWS: "/tpo/interviews",
+  QUESTION_BANK: "/tpo/question-bank",
   LOGIN: "/login",
   REGISTER: "/register",
 };

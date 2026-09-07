@@ -1,6 +1,7 @@
-import Assessment from "../model/assessment.model.js";
-import AssessmentResult from "../model/assessmentResult.model.js";
-import JobApplication from "../model/jobApplication.model.js";
+import { prisma } from "../config/prisma.js";
+import { sendNotification, getIo } from "../config/socket.js";
+import { generateMockAssessment } from "../services/aiAssessment.service.js";
+import { logAudit } from "../utils/audit.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,6 +9,119 @@ import PDFDocument from "pdfkit";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+export const getComputedStatus = (asm) => {
+  if (!asm) return "draft";
+  const now = new Date();
+  
+  if (asm.status === "draft") return "draft";
+  if (asm.status === "ready") return "ready";
+  if (asm.status === "archived") return "archived";
+  
+  // If the status is "live"
+  if (asm.endDate && now > new Date(asm.endDate)) {
+    return "ended";
+  }
+  if (asm.startDate && now < new Date(asm.startDate)) {
+    return "upcoming";
+  }
+  return "live";
+};
+
+export const runAssessmentValidation = (asm) => {
+  const issues = [];
+  if (!asm.title || asm.title.trim().length < 3) {
+    issues.push("Title must be at least 3 characters long.");
+  }
+  if (!asm.description || asm.description.trim().length < 5) {
+    issues.push("Description must be at least 5 characters long.");
+  }
+  if (asm.duration === undefined || asm.duration === null || parseInt(asm.duration) <= 0) {
+    issues.push("Duration must be a positive integer.");
+  }
+  if (asm.startDate && asm.endDate && new Date(asm.startDate) >= new Date(asm.endDate)) {
+    issues.push("End time must be after start time.");
+  }
+  
+  const questions = Array.isArray(asm.questions) ? asm.questions : [];
+  if (questions.length === 0) {
+    issues.push("Assessment must contain at least 1 question.");
+  } else {
+    questions.forEach((q, idx) => {
+      const qNum = idx + 1;
+      if (!q.question || q.question.trim().length < 3) {
+        issues.push(`Question ${qNum} text is empty or too short.`);
+      }
+      if (!q.options || !Array.isArray(q.options) || q.options.length !== 4) {
+        issues.push(`Question ${qNum} must have exactly 4 options.`);
+      } else {
+        const seenOpts = new Set();
+        q.options.forEach((opt, optIdx) => {
+          if (!opt || opt.trim() === "") {
+            issues.push(`Question ${qNum} Option ${String.fromCharCode(65 + optIdx)} cannot be empty.`);
+          }
+          const normalized = opt.toLowerCase().trim();
+          if (seenOpts.has(normalized)) {
+            issues.push(`Question ${qNum} has duplicate option: "${opt}".`);
+          }
+          seenOpts.add(normalized);
+        });
+      }
+      if (q.correctAnswer === null || q.correctAnswer === undefined || q.correctAnswer < 0 || q.correctAnswer > 3) {
+        issues.push(`Question ${qNum} must have a valid correct answer selected (0-3).`);
+      }
+    });
+  }
+  return issues;
+};
+
+const formatAssessment = (asm, userRole = null) => {
+  if (!asm) return null;
+  const formatted = {
+    ...asm,
+    _id: asm.id,
+    computedStatus: getComputedStatus(asm),
+    createdBy: asm.createdBy ? {
+      ...asm.createdBy,
+      _id: asm.createdBy.id,
+      id: asm.createdBy.id,
+    } : null,
+  };
+  if (userRole === "student" && Array.isArray(formatted.questions)) {
+    formatted.questions = formatted.questions.map(q => {
+      const { correctAnswer, explanation, ...rest } = q;
+      return rest;
+    });
+  }
+  return formatted;
+};
+
+const formatAssessmentResult = (res) => {
+  if (!res) return null;
+  const answersList = Array.isArray(res.answers) ? res.answers : [];
+  const correct = answersList.filter((a) => a.isCorrect === true).length;
+  const unanswered = answersList.filter((a) => a.selectedAnswer === null || a.selectedAnswer === undefined).length;
+  const incorrect = answersList.length - correct - unanswered;
+
+  return {
+    ...res,
+    _id: res.id,
+    totalQuestions: answersList.length,
+    correct,
+    incorrect,
+    unanswered,
+    assessment: res.assessment ? {
+      ...res.assessment,
+      _id: res.assessment.id,
+      id: res.assessment.id,
+    } : null,
+    student: res.student ? {
+      ...res.student,
+      _id: res.student.id,
+      id: res.student.id,
+    } : null,
+  };
+};
 
 export const createAssessment = async (req, res) => {
   try {
@@ -23,6 +137,12 @@ export const createAssessment = async (req, res) => {
       instructions,
       questions,
       status,
+      jobId,
+      positiveMarks,
+      negativeMarks,
+      allowedAttempts,
+      randomizeQuestions,
+      randomizeOptions,
     } = req.body;
 
     // Validation
@@ -36,6 +156,19 @@ export const createAssessment = async (req, res) => {
       return res
         .status(400)
         .json({ message: "At least one question is required." });
+    }
+
+    if (passingScore !== undefined && passingScore !== null) {
+      const ps = parseFloat(passingScore);
+      if (ps < 0 || ps > 100) {
+        return res.status(400).json({ message: "Passing percentage must be between 0 and 100." });
+      }
+    }
+
+    if (allowedAttempts !== undefined && allowedAttempts !== null) {
+      if (parseInt(allowedAttempts) < 1) {
+        return res.status(400).json({ message: "Allowed attempts must be at least 1." });
+      }
     }
 
     // Validate questions
@@ -53,30 +186,57 @@ export const createAssessment = async (req, res) => {
     }
 
     // Create new assessment
-    const assessment = new Assessment({
-      title,
-      description,
-      duration,
-      passingScore,
-      startDate: startDate ? new Date(startDate) : undefined,
-      endDate: endDate ? new Date(endDate) : undefined,
-      difficulty,
-      category,
-      instructions,
-      questions,
-      createdBy: req.user.id,
-      status:
-        status && ["draft", "published", "archived"].includes(status)
-          ? status
-          : "draft",
+    const assessment = await prisma.assessment.create({
+      data: {
+        title,
+        description,
+        duration: parseInt(duration),
+        passingScore: passingScore ? parseFloat(passingScore) : null,
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+        difficulty: difficulty || null,
+        category: category || null,
+        instructions: instructions || null,
+        questions: questions,
+        createdById: req.user.id,
+        status: status && ["draft", "published", "live", "archived"].includes(status) ? status : "draft",
+        jobId: jobId || null,
+        positiveMarks: positiveMarks !== undefined ? parseFloat(positiveMarks) : 10,
+        negativeMarks: negativeMarks !== undefined ? parseFloat(negativeMarks) : 0,
+        allowedAttempts: allowedAttempts !== undefined ? parseInt(allowedAttempts) : 1,
+        randomizeQuestions: randomizeQuestions === true || randomizeQuestions === "true",
+        randomizeOptions: randomizeOptions === true || randomizeOptions === "true",
+      },
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
     });
 
-    await assessment.save();
-    await assessment.populate("createdBy", "fullName email role");
+    if (jobId) {
+      try {
+        const applications = await prisma.jobApplication.findMany({
+          where: { jobId },
+          select: { studentId: true },
+        });
+        applications.forEach((app) => {
+          sendNotification(app.studentId, "assessment_linked", {
+            assessmentId: assessment.id,
+            title: assessment.title,
+            jobId,
+          });
+        });
+      } catch (err) {
+        console.error("Error sending socket alert to applicants:", err);
+      }
+    }
+
+    await logAudit(req.user.id, "CREATE_ASSESSMENT", `assessment:${assessment.id}`, null, { title: assessment.title, status: assessment.status });
 
     res.status(201).json({
       message: "Assessment created successfully!",
-      assessment,
+      assessment: formatAssessment(assessment),
     });
   } catch (error) {
     console.error("Error creating assessment:", error);
@@ -88,10 +248,17 @@ export const createAssessment = async (req, res) => {
 
 export const getAllAssessments = async (req, res) => {
   try {
-    const assessments = await Assessment.find({})
-      .populate("createdBy", "fullName email role")
-      .sort({ createdAt: -1 });
-    res.status(200).json(assessments);
+    const assessments = await prisma.assessment.findMany({
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    res.status(200).json(assessments.map(formatAssessment));
   } catch (error) {
     console.error("Error fetching assessments:", error);
     res
@@ -102,14 +269,18 @@ export const getAllAssessments = async (req, res) => {
 
 export const getAssessmentById = async (req, res) => {
   try {
-    const assessment = await Assessment.findById(req.params.id).populate(
-      "createdBy",
-      "fullName email role"
-    );
+    const assessment = await prisma.assessment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
-    res.status(200).json(assessment);
+    res.status(200).json(formatAssessment(assessment, req.user?.role));
   } catch (error) {
     console.error("Error fetching assessment by id:", error);
     res
@@ -120,64 +291,123 @@ export const getAssessmentById = async (req, res) => {
 
 export const updateAssessment = async (req, res) => {
   try {
-    const assessment = await Assessment.findById(req.params.id);
+    const assessment = await prisma.assessment.findUnique({
+      where: { id: req.params.id },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
 
     // Only allow TPO who created the assessment to update it
-    if (assessment.createdBy.toString() !== req.user.id) {
+    if (assessment.createdById !== req.user.id) {
       return res
         .status(403)
         .json({ message: "Unauthorized to update this assessment." });
     }
 
     const updates = req.body;
+    const updateData = {};
 
     // Validate status if provided
     if (
       updates.status &&
-      !["draft", "published", "live", "archived"].includes(updates.status)
+      !["draft", "ready", "published", "live", "archived"].includes(updates.status)
     ) {
       return res.status(400).json({ message: "Invalid status value." });
     }
 
-    // Convert date strings to Date objects if provided
-    if (updates.startDate) {
-      updates.startDate = new Date(updates.startDate);
-    }
-    if (updates.endDate) {
-      updates.endDate = new Date(updates.endDate);
+    // Archived assessments cannot be updated or restored
+    if (assessment.status === "archived" && updates.status && updates.status !== "archived") {
+      return res.status(400).json({ message: "Archived assessments cannot be updated or restored." });
     }
 
-    // Validate questions if provided
-    if (updates.questions) {
-      if (!Array.isArray(updates.questions) || updates.questions.length === 0) {
-        return res
-          .status(400)
-          .json({ message: "At least one question is required." });
+    if (updates.title !== undefined) updateData.title = updates.title;
+    if (updates.description !== undefined) updateData.description = updates.description;
+    if (updates.duration !== undefined) updateData.duration = parseInt(updates.duration);
+    if (updates.passingScore !== undefined) {
+      const ps = updates.passingScore ? parseFloat(updates.passingScore) : null;
+      if (ps !== null && (ps < 0 || ps > 100)) {
+        return res.status(400).json({ message: "Passing percentage must be between 0 and 100." });
       }
-      for (const q of updates.questions) {
-        if (!q.question || !q.options || !Array.isArray(q.options)) {
-          return res
-            .status(400)
-            .json({ message: "Each question must have text and options." });
-        }
-        if (q.options.length < 2) {
-          return res
-            .status(400)
-            .json({ message: "Each question must have at least 2 options." });
-        }
+      updateData.passingScore = ps;
+    }
+    if (updates.startDate !== undefined) updateData.startDate = updates.startDate ? new Date(updates.startDate) : null;
+    if (updates.endDate !== undefined) updateData.endDate = updates.endDate ? new Date(updates.endDate) : null;
+    if (updates.difficulty !== undefined) updateData.difficulty = updates.difficulty;
+    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.instructions !== undefined) updateData.instructions = updates.instructions;
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.jobId !== undefined) updateData.jobId = updates.jobId || null;
+    if (updates.questions !== undefined) updateData.questions = updates.questions;
+    if (updates.positiveMarks !== undefined) updateData.positiveMarks = parseFloat(updates.positiveMarks);
+    if (updates.negativeMarks !== undefined) updateData.negativeMarks = parseFloat(updates.negativeMarks);
+    if (updates.allowedAttempts !== undefined) {
+      const allowed = parseInt(updates.allowedAttempts);
+      if (allowed < 1) {
+        return res.status(400).json({ message: "Allowed attempts must be at least 1." });
+      }
+      updateData.allowedAttempts = allowed;
+    }
+    if (updates.randomizeQuestions !== undefined) updateData.randomizeQuestions = updates.randomizeQuestions === true || updates.randomizeQuestions === "true";
+    if (updates.randomizeOptions !== undefined) updateData.randomizeOptions = updates.randomizeOptions === true || updates.randomizeOptions === "true";
+
+    // Validate if trying to transit to ready or live
+    const targetStatus = updates.status || assessment.status;
+    if (["ready", "live"].includes(targetStatus)) {
+      const mergedAssessment = {
+        title: updateData.title !== undefined ? updateData.title : assessment.title,
+        description: updateData.description !== undefined ? updateData.description : assessment.description,
+        duration: updateData.duration !== undefined ? updateData.duration : assessment.duration,
+        startDate: updateData.startDate !== undefined ? updateData.startDate : assessment.startDate,
+        endDate: updateData.endDate !== undefined ? updateData.endDate : assessment.endDate,
+        questions: updateData.questions !== undefined ? updateData.questions : assessment.questions,
+      };
+      
+      const validationIssues = runAssessmentValidation(mergedAssessment);
+      if (validationIssues.length > 0) {
+        return res.status(400).json({
+          message: "Assessment validation failed. Cannot publish with issues.",
+          issues: validationIssues,
+        });
       }
     }
 
-    Object.assign(assessment, updates);
-    await assessment.save();
-    await assessment.populate("createdBy", "fullName email role");
+    const updated = await prisma.assessment.update({
+      where: { id: req.params.id },
+      data: updateData,
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+    });
+
+    // Notify students on live transition
+    const isTransitioningToLive = (updates.status === "live" && assessment.status !== "live");
+    const activeJobId = updated.jobId;
+    if (isTransitioningToLive && activeJobId) {
+      try {
+        const applications = await prisma.jobApplication.findMany({
+          where: { jobId: activeJobId },
+          select: { studentId: true },
+        });
+        applications.forEach((app) => {
+          sendNotification(app.studentId, "assessment_linked", {
+            assessmentId: updated.id,
+            title: updated.title,
+            jobId: activeJobId,
+          });
+        });
+      } catch (err) {
+        console.error("Error sending socket alert to applicants on live transition:", err);
+      }
+    }
+
+    await logAudit(req.user.id, "UPDATE_ASSESSMENT", `assessment:${updated.id}`, { status: assessment.status, title: assessment.title }, { status: updated.status, title: updated.title });
 
     res.status(200).json({
       message: "Assessment updated successfully!",
-      assessment,
+      assessment: formatAssessment(updated),
     });
   } catch (error) {
     console.error("Error updating assessment:", error);
@@ -190,21 +420,34 @@ export const updateAssessment = async (req, res) => {
 export const deleteAssessment = async (req, res) => {
   try {
     const { id } = req.params;
-    // Ensure only the creator can delete
-    const deleted = await Assessment.findOneAndDelete({
-      _id: id,
-      createdBy: req.user.id,
+    const exists = await prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { results: true },
+        },
+      },
     });
-    if (!deleted) {
-      // Determine if not found or forbidden
-      const exists = await Assessment.findById(id);
-      if (!exists) {
-        return res.status(404).json({ message: "Assessment not found" });
-      }
+    if (!exists) {
+      return res.status(404).json({ message: "Assessment not found" });
+    }
+    if (exists.createdById !== req.user.id) {
       return res
         .status(403)
         .json({ message: "Unauthorized to delete this assessment." });
     }
+
+    if (exists._count.results > 0) {
+      return res.status(400).json({
+        message: "This assessment contains student attempts/results. Deleting it may affect historical records. Consider archiving instead.",
+        hasResults: true,
+      });
+    }
+
+    await prisma.assessment.delete({
+      where: { id },
+    });
+
     return res
       .status(200)
       .json({ message: "Assessment deleted successfully!" });
@@ -218,10 +461,18 @@ export const deleteAssessment = async (req, res) => {
 
 export const getMyAssessments = async (req, res) => {
   try {
-    const assessments = await Assessment.find({ createdBy: req.user.id })
-      .populate("createdBy", "fullName email role")
-      .sort({ createdAt: -1 });
-    res.status(200).json(assessments);
+    const assessments = await prisma.assessment.findMany({
+      where: { createdById: req.user.id },
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    res.status(200).json(assessments.map(formatAssessment));
   } catch (error) {
     console.error("Error fetching my assessments:", error);
     res
@@ -235,33 +486,50 @@ export const getLiveAssessments = async (req, res) => {
   try {
     const now = new Date();
 
-    // Get assessments that are live
-    // If startDate/endDate exist, check time frame, otherwise show all live assessments
-    const assessments = await Assessment.find({
-      status: "live",
-      $and: [
-        {
-          $or: [
-            // If startDate doesn't exist, include it
-            { startDate: { $exists: false } },
-            // If startDate exists, check if current time is after startDate
-            { startDate: { $lte: now } },
-          ],
+    const assessments = await prisma.assessment.findMany({
+      where: {
+        status: "live",
+        AND: [
+          {
+            OR: [
+              { startDate: null },
+              { startDate: { lte: now } },
+            ],
+          },
+          {
+            OR: [
+              { endDate: null },
+              { endDate: { gte: now } },
+            ],
+          },
+        ],
+      },
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
         },
-        {
-          $or: [
-            // If endDate doesn't exist, include it
-            { endDate: { $exists: false } },
-            // If endDate exists, check if current time is before endDate
-            { endDate: { $gte: now } },
-          ],
+        results: {
+          where: { studentId: req.user.id },
         },
-      ],
-    })
-      .populate("createdBy", "fullName email role")
-      .sort({ createdAt: -1 });
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
-    res.status(200).json(assessments);
+    // Check student applied job drives
+    const studentApplications = await prisma.jobApplication.findMany({
+      where: { studentId: req.user.id },
+      select: { jobId: true },
+    });
+    const appliedJobIds = new Set(studentApplications.map((app) => app.jobId));
+
+    const eligibleAssessments = assessments.filter((asm) => {
+      if (!asm.jobId) return true; // Open assessment
+      return appliedJobIds.has(asm.jobId);
+    });
+
+    res.status(200).json(eligibleAssessments.map((asm) => formatAssessment(asm, req.user?.role)));
   } catch (error) {
     console.error("Error fetching live assessments:", error);
     res
@@ -275,24 +543,32 @@ export const getAssessmentResults = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verify assessment exists and user is the creator
-    const assessment = await Assessment.findById(id);
+    // Verify assessment exists
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
 
     // Only allow TPO who created the assessment to view results
-    if (assessment.createdBy.toString() !== req.user.id) {
+    if (assessment.createdById !== req.user.id) {
       return res
         .status(403)
         .json({ message: "Unauthorized to view results for this assessment" });
     }
 
     // Get all results for this assessment
-    const results = await AssessmentResult.find({ assessment: id })
-      .populate("student", "fullName email")
-      .populate("assessment", "title questions")
-      .sort({ submittedAt: -1 });
+    const results = await prisma.assessmentResult.findMany({
+      where: { assessmentId: id },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } },
+        assessment: { select: { id: true, title: true, questions: true } },
+      },
+      orderBy: {
+        submittedAt: "desc",
+      },
+    });
 
     // Calculate statistics
     const totalStudents = results.length;
@@ -310,15 +586,16 @@ export const getAssessmentResults = async (req, res) => {
 
     res.status(200).json({
       assessment: {
-        _id: assessment._id,
+        _id: assessment.id,
+        id: assessment.id,
         title: assessment.title,
         description: assessment.description,
         duration: assessment.duration,
         passingScore: assessment.passingScore,
-        totalQuestions: assessment.questions.length,
+        totalQuestions: Array.isArray(assessment.questions) ? assessment.questions.length : 0,
         questions: assessment.questions, // Include questions for answer details view
       },
-      results,
+      results: results.map(formatAssessmentResult),
       statistics: {
         totalStudents,
         passedCount,
@@ -341,7 +618,9 @@ export const getAssessmentForTaking = async (req, res) => {
     const { id } = req.params;
     const now = new Date();
 
-    const assessment = await Assessment.findById(id);
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
@@ -349,6 +628,21 @@ export const getAssessmentForTaking = async (req, res) => {
     // Check if assessment is live
     if (assessment.status !== "live") {
       return res.status(403).json({ message: "Assessment is not live" });
+    }
+
+    // Check student job application eligibility
+    if (assessment.jobId) {
+      const application = await prisma.jobApplication.findUnique({
+        where: {
+          jobId_studentId: {
+            jobId: assessment.jobId,
+            studentId: req.user.id,
+          },
+        },
+      });
+      if (!application) {
+        return res.status(403).json({ message: "You are not eligible for this assessment (not applied to linked job drive)." });
+      }
     }
 
     // Check if within time frame
@@ -364,35 +658,55 @@ export const getAssessmentForTaking = async (req, res) => {
     }
 
     // Check if student has already submitted
-    const existingResult = await AssessmentResult.findOne({
-      assessment: id,
-      student: req.user.id,
+    const existingResult = await prisma.assessmentResult.findUnique({
+      where: {
+        assessmentId_studentId: {
+          assessmentId: id,
+          studentId: req.user.id,
+        },
+      },
     });
 
     if (existingResult && existingResult.submittedAt) {
-      return res.status(403).json({
-        message: "You have already submitted this assessment",
-        result: existingResult,
-      });
+      const allowed = assessment.allowedAttempts || 1;
+      if (existingResult.attemptsCount >= allowed) {
+        return res.status(403).json({
+          message: `You have already submitted this assessment. maximum allowed attempts (${allowed}) reached.`,
+          result: formatAssessmentResult(existingResult),
+        });
+      }
     }
 
-    // Remove correct answers from questions
-    const questionsForStudent = assessment.questions.map((q) => ({
+    // Remove correct answers from questions and attach metadata
+    const questionsList = Array.isArray(assessment.questions) ? assessment.questions : [];
+    const questionsForStudent = questionsList.map((q, idx) => ({
+      questionIndex: idx, // Pass the original index so mapping works during shuffle
       question: q.question,
-      type: q.type,
+      type: q.type || q.questionType || "MCQ",
       options: q.options,
-      points: q.points,
+      points: q.points || assessment.positiveMarks || 10,
+      topic: q.topic || "General",
+      skill: q.skill || "General",
+      difficulty: q.difficulty || "medium",
+      questionType: q.questionType || "MCQ",
     }));
 
     const assessmentForStudent = {
-      _id: assessment._id,
+      _id: assessment.id,
+      id: assessment.id,
       title: assessment.title,
       description: assessment.description,
       duration: assessment.duration,
       passingScore: assessment.passingScore,
       instructions: assessment.instructions,
       questions: questionsForStudent,
-      startedAt: existingResult?.startedAt || new Date(),
+      startedAt: (existingResult && !existingResult.submittedAt) ? existingResult.startedAt : new Date(),
+      randomizeQuestions: assessment.randomizeQuestions,
+      randomizeOptions: assessment.randomizeOptions,
+      allowedAttempts: assessment.allowedAttempts,
+      attemptsCount: existingResult?.attemptsCount || 0,
+      positiveMarks: assessment.positiveMarks,
+      negativeMarks: assessment.negativeMarks,
     };
 
     res.status(200).json(assessmentForStudent);
@@ -408,35 +722,55 @@ export const getAssessmentForTaking = async (req, res) => {
 export const submitAssessment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { answers, startedAt, autoSubmitted } = req.body;
+    const { answers, startedAt, autoSubmitted, warnings } = req.body;
 
-    const assessment = await Assessment.findById(id);
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
 
     // Check if student has already submitted
-    let result = await AssessmentResult.findOne({
-      assessment: id,
-      student: req.user.id,
+    let result = await prisma.assessmentResult.findUnique({
+      where: {
+        assessmentId_studentId: {
+          assessmentId: id,
+          studentId: req.user.id,
+        },
+      },
     });
 
     if (result && result.submittedAt) {
-      return res.status(403).json({
-        message: "You have already submitted this assessment",
-        result,
-      });
+      const allowed = assessment.allowedAttempts || 1;
+      if (result.attemptsCount >= allowed) {
+        return res.status(403).json({
+          message: `You have already submitted this assessment. maximum allowed attempts (${allowed}) reached.`,
+          result: formatAssessmentResult(result),
+        });
+      }
     }
 
-    // Calculate score
+    // Calculate score with negative marking
     let totalScore = 0;
     let totalPoints = 0;
-    const processedAnswers = assessment.questions.map((question, index) => {
-      totalPoints += question.points || 1;
+    const questionsList = Array.isArray(assessment.questions) ? assessment.questions : [];
+    const processedAnswers = questionsList.map((question, index) => {
+      const qPoints = question.points || assessment.positiveMarks || 10;
+      totalPoints += qPoints;
+
       const studentAnswer = answers.find((a) => a.questionIndex === index);
       const selectedAnswer = studentAnswer?.selectedAnswer ?? null;
       const isCorrect = selectedAnswer === question.correctAnswer;
-      const pointsEarned = isCorrect ? question.points || 1 : 0;
+
+      let pointsEarned = 0;
+      if (selectedAnswer !== null && selectedAnswer !== undefined) {
+        if (isCorrect) {
+          pointsEarned = qPoints;
+        } else {
+          pointsEarned = -Math.abs(assessment.negativeMarks || 0);
+        }
+      }
       totalScore += pointsEarned;
 
       return {
@@ -447,7 +781,7 @@ export const submitAssessment = async (req, res) => {
       };
     });
 
-    const percentage = totalPoints > 0 ? (totalScore / totalPoints) * 100 : 0;
+    const percentage = totalPoints > 0 ? (Math.max(0, totalScore) / totalPoints) * 100 : 0;
     const passed = assessment.passingScore
       ? percentage >= assessment.passingScore
       : false;
@@ -457,52 +791,75 @@ export const submitAssessment = async (req, res) => {
       ? Math.round((submittedAt - new Date(startedAt)) / 1000 / 60)
       : 0;
 
+    let updatedResult;
+    const warningsCount = parseInt(warnings) || 0;
+
     if (result) {
-      // Update existing result
-      result.answers = processedAnswers;
-      result.score = totalScore;
-      result.totalPoints = totalPoints;
-      result.percentage = percentage;
-      result.passed = passed;
-      result.submittedAt = submittedAt;
-      result.timeTaken = timeTaken;
-      result.autoSubmitted = autoSubmitted || false;
-      await result.save();
+      // Update existing result, incrementing attempts count
+      updatedResult = await prisma.assessmentResult.update({
+        where: { id: result.id },
+        data: {
+          answers: processedAnswers,
+          score: totalScore,
+          totalPoints,
+          percentage,
+          passed,
+          submittedAt,
+          timeTaken,
+          autoSubmitted: autoSubmitted || false,
+          warnings: warningsCount,
+          attemptsCount: result.attemptsCount + 1,
+        },
+        include: {
+          assessment: { select: { id: true, title: true, jobId: true } },
+          student: { select: { id: true, fullName: true, email: true } },
+        },
+      });
     } else {
       // Create new result
-      result = new AssessmentResult({
-        assessment: id,
-        student: req.user.id,
-        answers: processedAnswers,
-        score: totalScore,
-        totalPoints,
-        percentage,
-        passed,
-        startedAt: startedAt ? new Date(startedAt) : new Date(),
-        submittedAt,
-        timeTaken,
-        autoSubmitted: autoSubmitted || false,
+      updatedResult = await prisma.assessmentResult.create({
+        data: {
+          assessmentId: id,
+          studentId: req.user.id,
+          answers: processedAnswers,
+          score: totalScore,
+          totalPoints,
+          percentage,
+          passed,
+          startedAt: startedAt ? new Date(startedAt) : new Date(),
+          submittedAt,
+          timeTaken,
+          autoSubmitted: autoSubmitted || false,
+          warnings: warningsCount,
+          attemptsCount: 1,
+        },
+        include: {
+          assessment: { select: { id: true, title: true, jobId: true } },
+          student: { select: { id: true, fullName: true, email: true } },
+        },
       });
-      await result.save();
     }
 
-    await result.populate("assessment", "title job");
-    await result.populate("student", "fullName email");
-
     // If student passed and assessment is linked to a job, automatically shortlist them
-    if (passed && assessment.job) {
+    if (passed && updatedResult.assessment && updatedResult.assessment.jobId) {
       try {
-        const jobApplication = await JobApplication.findOne({
-          job: assessment.job,
-          student: req.user.id,
+        const jobApplication = await prisma.jobApplication.findUnique({
+          where: {
+            jobId_studentId: {
+              jobId: updatedResult.assessment.jobId,
+              studentId: req.user.id,
+            },
+          },
         });
 
         if (jobApplication && jobApplication.status !== "accepted") {
           // Only update if not already accepted
-          jobApplication.status = "shortlisted";
-          await jobApplication.save();
+          await prisma.jobApplication.update({
+            where: { id: jobApplication.id },
+            data: { status: "shortlisted" },
+          });
           console.log(
-            `Student ${req.user.id} automatically shortlisted for job ${assessment.job} after passing assessment`
+            `Student ${req.user.id} automatically shortlisted for job ${updatedResult.assessment.jobId} after passing assessment`
           );
         }
       } catch (jobAppError) {
@@ -513,14 +870,14 @@ export const submitAssessment = async (req, res) => {
 
     res.status(200).json({
       message: "Assessment submitted successfully!",
-      result,
+      result: formatAssessmentResult(updatedResult),
     });
   } catch (error) {
     console.error("Error submitting assessment:", error);
-    if (error.code === 11000) {
-      return res.status(409).json({
-        message: "You have already submitted this assessment",
-      });
+    if (error.code === "P2002") {
+      return res
+        .status(400)
+        .json({ message: "You have already submitted this assessment" });
     }
     res
       .status(500)
@@ -533,26 +890,35 @@ export const generateAssessmentPassedStudentsPDF = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verify assessment exists and user is the creator
-    const assessment = await Assessment.findById(id);
+    // Verify assessment exists
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
     if (!assessment) {
       return res.status(404).json({ message: "Assessment not found" });
     }
 
     // Only allow TPO who created the assessment
-    if (assessment.createdBy.toString() !== req.user.id) {
+    if (assessment.createdById !== req.user.id) {
       return res
         .status(403)
         .json({ message: "Unauthorized to generate PDF for this assessment" });
     }
 
     // Get all passed students
-    const results = await AssessmentResult.find({
-      assessment: id,
-      passed: true,
-    })
-      .populate("student", "fullName email")
-      .sort({ percentage: -1, submittedAt: -1 });
+    const results = await prisma.assessmentResult.findMany({
+      where: {
+        assessmentId: id,
+        passed: true,
+      },
+      include: {
+        student: { select: { id: true, fullName: true, email: true } },
+      },
+      orderBy: [
+        { percentage: "desc" },
+        { submittedAt: "desc" },
+      ],
+    });
 
     if (results.length === 0) {
       return res.status(404).json({
@@ -575,8 +941,10 @@ export const generateAssessmentPassedStudentsPDF = async (req, res) => {
     // Generate PDF
     await generatePDF(assessment, results, filepath);
 
-    // Return the file URL
-    const pdfUrl = `http://localhost:4000/uploads/pdfs/${filename}`;
+    // Return the file URL dynamically based on hosting headers
+    const host = req.get("host") || "localhost:4000";
+    const protocol = req.protocol || "http";
+    const pdfUrl = `${protocol}://${host}/uploads/pdfs/${filename}`;
 
     res.status(200).json({
       message: "File generated successfully",
@@ -639,13 +1007,14 @@ const generatePDF = async (assessment, results, filepath) => {
       .moveDown(0.5);
 
     doc.fillColor(secondaryColor).fontSize(10).text("METRICS");
+    const questionsCount = Array.isArray(assessment.questions) ? assessment.questions.length : 0;
     doc
       .fillColor("#000000")
       .fontSize(11)
       .text(
-        `Passing Score: ${assessment.passingScore || "N/A"}%  |  Questions: ${
-          assessment.questions.length
-        }  |  Date: ${new Date().toLocaleString()}`
+         `Passing Score: ${assessment.passingScore || "N/A"}%  |  Questions: ${
+           questionsCount
+         }  |  Date: ${new Date().toLocaleString()}`
       );
     doc.moveDown(2.5);
 
@@ -706,4 +1075,117 @@ const generatePDF = async (assessment, results, filepath) => {
     stream.on("finish", resolve);
     stream.on("error", reject);
   });
+};
+
+export const getAssessmentByJobId = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const assessment = await prisma.assessment.findFirst({
+      where: { jobId, status: "live" },
+    });
+    if (!assessment) {
+      return res.status(200).json(null);
+    }
+    res.status(200).json(formatAssessment(assessment, req.user?.role));
+  } catch (error) {
+    console.error("Error fetching assessment by job id:", error);
+    res.status(500).json({ message: "Server error while fetching job assessment." });
+  }
+};
+
+export const duplicateAssessment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const original = await prisma.assessment.findUnique({
+      where: { id },
+    });
+    if (!original) {
+      return res.status(404).json({ message: "Assessment not found." });
+    }
+
+    // Create duplicate copy in draft status with clear title
+    const duplicate = await prisma.assessment.create({
+      data: {
+        title: `Copy of ${original.title}`,
+        description: original.description,
+        duration: original.duration,
+        passingScore: original.passingScore,
+        difficulty: original.difficulty,
+        category: original.category,
+        instructions: original.instructions,
+        questions: original.questions,
+        createdById: req.user.id,
+        status: "draft",
+        jobId: null, // Clear jobId to prevent overlapping drive linkages
+      },
+      include: {
+        createdBy: {
+          select: { id: true, fullName: true, email: true, role: true },
+        },
+      },
+    });
+
+    res.status(201).json({
+      message: "Assessment duplicated successfully!",
+      assessment: formatAssessment(duplicate),
+    });
+  } catch (error) {
+    console.error("Error duplicating assessment:", error);
+    res.status(500).json({ message: "Server error while duplicating assessment." });
+  }
+};
+
+export const validateAssessment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
+    if (!assessment) {
+      return res.status(404).json({ message: "Assessment not found." });
+    }
+
+    const issues = runAssessmentValidation(assessment);
+    res.status(200).json({
+      id: assessment.id,
+      isValid: issues.length === 0,
+      issues,
+    });
+  } catch (error) {
+    console.error("Error validating assessment:", error);
+    res.status(500).json({ message: "Server error while validating assessment." });
+  }
+};
+
+export const previewAssessment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const assessment = await prisma.assessment.findUnique({
+      where: { id },
+    });
+    if (!assessment) {
+      return res.status(404).json({ message: "Assessment not found" });
+    }
+    const questionsList = Array.isArray(assessment.questions) ? assessment.questions : [];
+    const previewQuestions = questionsList.map((q, idx) => ({
+      questionIndex: idx,
+      question: q.question,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation,
+      points: q.points || assessment.positiveMarks || 10,
+      topic: q.topic || "General",
+      skill: q.skill || "General",
+      difficulty: q.difficulty || "medium",
+      questionType: q.questionType || "MCQ"
+    }));
+
+    res.status(200).json({
+      ...formatAssessment(assessment),
+      questions: previewQuestions
+    });
+  } catch (error) {
+    console.error("Error previewing assessment:", error);
+    res.status(500).json({ message: "Server error while previewing assessment." });
+  }
 };

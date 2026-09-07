@@ -35,6 +35,12 @@ function TpoAnnouncementsManage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   const load = async () => {
     setLoading(true);
@@ -59,7 +65,7 @@ function TpoAnnouncementsManage() {
   const fetchAssessments = async () => {
     setLoadingAssessments(true);
     try {
-      const res = await axios.get("http://localhost:4000/api/assessments/my", {
+      const res = await axios.get(`${API_URL}/assessments/my`, {
         withCredentials: true,
       });
       setAssessments(res.data || []);
@@ -136,6 +142,22 @@ function TpoAnnouncementsManage() {
       setError(e.response?.data?.message || "Failed to delete announcement.");
     }
   };
+
+  const filteredAnnouncements = announcements.filter((a) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      (a.title || "").toLowerCase().includes(term) ||
+      (a.content || "").toLowerCase().includes(term)
+    );
+  });
+
+  const itemsPerPage = 5;
+  const totalPages = Math.ceil(filteredAnnouncements.length / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedAnnouncements = filteredAnnouncements.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
@@ -277,20 +299,30 @@ function TpoAnnouncementsManage() {
         <CardHeader>
           <CardTitle>Recent Announcements</CardTitle>
           <CardDescription>
-            {loading ? "Loading..." : `${announcements.length} announcements`}
+            {loading ? "Loading..." : `${filteredAnnouncements.length} announcements found`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {!loading && announcements.length === 0 && (
-            <div>No announcements yet.</div>
+          <div className="pb-2">
+            <Input
+              placeholder="Search announcements..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+            />
+          </div>
+
+          {!loading && filteredAnnouncements.length === 0 && (
+            <div className="text-sm text-gray-500 py-4 text-center">No matching announcements found.</div>
           )}
-          {announcements.map((a) => (
+
+          {paginatedAnnouncements.map((a) => (
             <div
               key={a._id}
-              className="border rounded p-3 flex items-start justify-between"
+              className="border rounded p-3 flex items-start justify-between bg-white shadow-sm"
             >
               <div className="flex-1">
-                <h4 className="font-semibold">{a.title}</h4>
+                <h4 className="font-semibold text-gray-800">{a.title}</h4>
                 <p className="text-sm text-gray-600 mt-1">{a.content}</p>
                 {a.pdfUrl && (
                   <div className="mt-2">
@@ -298,7 +330,7 @@ function TpoAnnouncementsManage() {
                       href={a.pdfUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+                      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium"
                     >
                       <FileText className="h-4 w-4" />
                       {a.pdfFileName || "Download PDF"}
@@ -312,13 +344,37 @@ function TpoAnnouncementsManage() {
                 </p>
               </div>
               <button
-                className="text-red-600 hover:text-red-700"
+                className="text-red-500 hover:text-red-700 ml-2"
                 onClick={() => handleDelete(a._id)}
               >
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
           ))}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-gray-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

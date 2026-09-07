@@ -1,27 +1,12 @@
-import mongoose from "mongoose";
+import { prisma } from "./prisma.js";
 
 export async function connectMongo() {
   try {
-    // Check if MongoDB URI exists
-    if (!process.env.MONGODB_URI) {
-      throw new Error("❌ MONGODB_URI is missing in .env file");
-    }
-
-    // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI);
-
-    console.log("✅ MongoDB Connected Successfully");
+    // Run a simple query to verify database connection is alive
+    await prisma.$queryRaw`SELECT 1`;
+    console.log("✅ Neon PostgreSQL Connected Successfully");
   } catch (error) {
-    console.error("❌ MongoDB Connection Failed:", error.message);
-    process.exit(1); // Exit if can't connect to database
+    console.error("❌ PostgreSQL Connection Failed:", error.message);
+    process.exit(1); // Exit if connection fails
   }
 }
-
-// Optional: Handle connection events
-mongoose.connection.on("disconnected", () => {
-  console.log("⚠️  MongoDB Disconnected");
-});
-
-mongoose.connection.on("error", (err) => {
-  console.error("❌ MongoDB Error:", err.message);
-});

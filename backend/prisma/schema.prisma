@@ -1,0 +1,269 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String            @id
+  fullName         String
+  email            String
+  password         String
+  role             String            @default("student")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  
+  profile          StudentProfile?
+  postedJobs       Job[]
+  applications     JobApplication[]
+  announcements    Announcement[]
+  assessments      Assessment[]
+  assessmentResults AssessmentResult[]
+  refreshTokens    RefreshToken[]
+  interviews       Interview[]
+  createdInterviews Interview[]      @relation("CreatedInterviews")
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  questionBankQuestions QuestionBank[]
+
+  @@unique([email, role])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model StudentProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch        String
+  cgpa          Float?
+  gradYear      Int?
+  resumeLink    String?
+  linkedIn      String?
+  bio           String?
+  profilePicUrl String   @default("")
+  experience    Float?   @default(0)
+  skills        String[] @default([])
+  education     Json?
+  projects      Json?
+  internships   Json?
+  certifications String[] @default([])
+  achievements  String[] @default([])
+  gitHub        String?
+  portfolio     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([branch])
+}
+
+model Job {
+  id              String           @id @default(uuid())
+  title           String
+  company         String
+  description     String
+  skills          String[]
+  ctc             Float
+  location        String
+  deadline        DateTime
+  applicationLink String?
+  postedById      String
+  postedBy        User             @relation(fields: [postedById], references: [id])
+  status          String           @default("active")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  // Eligibility criteria additions
+  minCgpa         Float?
+  allowedBranches String[]         @default([])
+  gradYear        Int?
+  backlogRules    Int?             @default(0)
+  experience      Float?           @default(0)
+
+  applications    JobApplication[]
+  assessments     Assessment[]
+  interviews      Interview[]
+
+  @@index([postedById])
+  @@index([status])
+}
+
+model JobApplication {
+  id             String   @id @default(uuid())
+  jobId          String
+  job            Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status         String   @default("applied") // applied, under_review, shortlisted, assessment, interview, selected, rejected
+  appliedAt      DateTime @default(now())
+  notes          String?
+  statusHistory  Json?    // Array of { status, timestamp, changedBy, notes }
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([jobId, studentId])
+  @@index([jobId])
+  @@index([studentId])
+}
+
+model Announcement {
+  id           String    @id @default(uuid())
+  title        String
+  content      String
+  scheduledAt  DateTime?
+  pdfUrl       String?
+  pdfFileName  String?
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([createdById])
+}
+
+model Assessment {
+  id            String             @id @default(uuid())
+  title         String
+  description   String
+  duration      Int
+  passingScore  Float?             // Treat as passing percentage
+  startDate     DateTime?
+  endDate       DateTime?
+  difficulty    String?
+  category      String?
+  instructions  String?
+  questions     Json
+  createdById   String
+  createdBy     User               @relation(fields: [createdById], references: [id])
+  jobId         String?
+  job           Job?               @relation(fields: [jobId], references: [id])
+  status        String             @default("draft")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  
+  // Mark settings configuration
+  positiveMarks Float              @default(10)
+  negativeMarks Float              @default(0)
+  allowedAttempts Int              @default(1)
+  randomizeQuestions Boolean         @default(false)
+  randomizeOptions   Boolean         @default(false)
+
+  results       AssessmentResult[]
+
+  @@index([createdById])
+  @@index([jobId])
+}
+
+model AssessmentResult {
+  id            String     @id @default(uuid())
+  assessmentId  String
+  assessment    Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  answers       Json
+  score         Float      @default(0)
+  totalPoints   Float
+  percentage    Float      @default(0)
+  passed        Boolean    @default(false)
+  startedAt     DateTime   @default(now())
+  submittedAt   DateTime?
+  timeTaken     Float      @default(0)
+  autoSubmitted Boolean    @default(false)
+  warnings      Int        @default(0)
+  attemptsCount Int        @default(1)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([assessmentId, studentId])
+  @@index([assessmentId])
+  @@index([studentId])
+}
+
+model Interview {
+  id          String   @id @default(uuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title       String
+  type        String
+  scheduledAt DateTime
+  duration    Int
+  link        String?
+  status      String   @default("scheduled") // scheduled, passed, failed, selected, rejected, cancelled
+  notes       String?
+  createdById String
+  createdBy   User     @relation("CreatedInterviews", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Interview enhancements
+  interviewer String?
+  feedback    String?
+  result      String?
+  roundNumber Int      @default(1)
+  history     Json?    // Rescheduling logs: Array of { rescheduledFrom, rescheduledTo, timestamp, reason }
+
+  @@index([jobId])
+  @@index([studentId])
+  @@index([createdById])
+}
+
+model QuestionBank {
+  id            String   @id @default(uuid())
+  question      String
+  options       Json     // Array of strings
+  correctAnswer Int      // 0-indexed correct option
+  explanation   String?
+  points        Int      @default(10)
+  topic         String?
+  skill         String?
+  difficulty    String   @default("medium")
+  questionType  String   @default("MCQ")
+  createdById   String
+  createdBy     User     @relation(fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([createdById])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  content     String
+  category    String   @default("general") // important, interview, placement, assessment, general
+  deepLink    String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  resource  String
+  oldValue  Json?
+  newValue  Json?
+  timestamp DateTime @default(now())
+
+  @@index([userId])
+}

@@ -11,25 +11,34 @@ import {
   submitAssessment,
   getAssessmentResults,
   generateAssessmentPassedStudentsPDF,
+  getAssessmentByJobId,
+  duplicateAssessment,
+  validateAssessment,
+  previewAssessment,
 } from "../controllers/assessment.controller.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, isAdmin } from "../middlewares/authMiddleware.js";
 
 const router = Router();
 
-router.post("/", protect, createAssessment);
-router.get("/", protect, getAllAssessments);
-router.get("/my", protect, getMyAssessments);
-router.get("/live", protect, getLiveAssessments); // Protected route - must be before /:id
-router.get("/:id/results", protect, getAssessmentResults); // Get assessment results - must be before /:id
+router.post("/", protect, isAdmin, createAssessment);
+router.get("/", protect, isAdmin, getAllAssessments);
+router.get("/my", protect, isAdmin, getMyAssessments);
+router.get("/live", protect, getLiveAssessments);
+router.get("/job/:jobId", protect, getAssessmentByJobId);
+router.get("/:id/preview", protect, isAdmin, previewAssessment);
+router.get("/:id/results", protect, isAdmin, getAssessmentResults);
 router.get(
   "/:id/pdf/passed-students",
   protect,
+  isAdmin,
   generateAssessmentPassedStudentsPDF,
-); // Generate PDF - must be before /:id
-router.get("/:id/take", protect, getAssessmentForTaking); // Get assessment for taking - must be before /:id
-router.post("/:id/submit", protect, submitAssessment); // Submit assessment - must be before /:id
+);
+router.get("/:id/take", protect, getAssessmentForTaking);
+router.post("/:id/submit", protect, submitAssessment);
+router.post("/:id/duplicate", protect, isAdmin, duplicateAssessment);
+router.get("/:id/validate", protect, isAdmin, validateAssessment);
 router.get("/:id", protect, getAssessmentById);
-router.put("/:id", protect, updateAssessment);
-router.delete("/:id", protect, deleteAssessment);
+router.put("/:id", protect, isAdmin, updateAssessment);
+router.delete("/:id", protect, isAdmin, deleteAssessment);
 
 export default router;

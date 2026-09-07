@@ -36,9 +36,8 @@ const JobCard = ({ job }) => {
 
     setApplying(true);
     try {
-      // Submit application to backend
       await axios.post(
-        `http://localhost:4000/api/applications/job/${job._id}`,
+        `${API_URL}/applications/job/${job._id}`,
         {},
         {
           withCredentials: true,
@@ -108,16 +107,46 @@ const JobCard = ({ job }) => {
           View Full Description
         </button>
       )}
+
+      {/* Eligibility Display */}
+      {job.eligibility && (
+        <div className="mt-3 p-3 bg-slate-50/50 rounded-xl text-xs space-y-1.5 border border-slate-100/50">
+          <div className="flex items-center gap-1.5 font-extrabold text-[11px]">
+            {job.eligibility.eligible ? (
+              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">✓ Eligible to Apply</span>
+            ) : (
+              <span className="text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-100">✕ Not Eligible</span>
+            )}
+          </div>
+          {/* Criteria details */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-gray-400 font-bold pt-1">
+            <div>CGPA Required: <span className="text-slate-700">{job.minCgpa !== null && job.minCgpa !== undefined ? job.minCgpa : "None"}</span></div>
+            <div>Graduation Year: <span className="text-slate-700">{job.gradYear !== null && job.gradYear !== undefined ? job.gradYear : "All"}</span></div>
+            <div className="col-span-2">Required Skills: <span className="text-slate-700">{job.skills && job.skills.length > 0 ? job.skills.join(", ") : "Any"}</span></div>
+          </div>
+          {!job.eligibility.eligible && job.eligibility.reasons && job.eligibility.reasons.length > 0 && (
+            <div className="pt-1.5 border-t border-slate-100 text-[10px] text-red-600 font-semibold space-y-0.5">
+              {job.eligibility.reasons.map((reason, idx) => (
+                <div key={idx} className="flex items-start gap-1">
+                  <span>•</span>
+                  <span>{reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex justify-end items-center mt-4">
         <button
           onClick={handleApply}
-          disabled={applied || applying || !isActive}
+          disabled={applied || applying || !isActive || (job.eligibility && !job.eligibility.eligible)}
           className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
             applied
               ? "bg-green-600 cursor-not-allowed"
               : applying
                 ? "bg-blue-400 cursor-wait"
-                : isActive
+                : isActive && (!job.eligibility || job.eligibility.eligible)
                   ? "bg-blue-600 hover:bg-blue-700"
                   : "bg-gray-400 cursor-not-allowed"
           }`}

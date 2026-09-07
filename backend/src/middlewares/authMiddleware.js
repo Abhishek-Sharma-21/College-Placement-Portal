@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import User from "../model/auth.model.js";
+import { prisma } from "../config/prisma.js";
 
 const protect = async (req, res, next) => {
   let token;
@@ -15,11 +15,27 @@ const protect = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.user = await User.findById(decoded.id).select("-password");
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-    if (!req.user) {
+    if (!user) {
       return res.status(401).json({ message: "User not found." });
     }
+
+    // Set req.user and alias _id for MongoDB backward compatibility
+    req.user = {
+      ...user,
+      _id: user.id,
+    };
 
     next();
   } catch (error) {

@@ -15,14 +15,9 @@ const AddJob = lazy(() => import("@/tpo/pages/AddJob"));
 const EditJob = lazy(() => import("@/tpo/pages/EditJob"));
 const TpoAnnouncementsManage = lazy(() => import("@/tpo/pages/Announcements"));
 const CreateAssessment = lazy(() => import("@/tpo/pages/CreateAssessment"));
-
-// Minimal dashboard that composes existing widgets
-const TpoDashboard = () => (
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-    <RecentJobPostingCard />
-    <RecentlyRegisteredStudents />
-  </div>
-);
+const TpoDashboard = lazy(() => import("@/tpo/pages/TpoDashboard"));
+const TpoInterviews = lazy(() => import("@/tpo/pages/Interviews"));
+const QuestionBank = lazy(() => import("@/tpo/pages/QuestionBank"));
 
 export default function TpoNavigateRoutes() {
   return (
@@ -64,6 +59,14 @@ export default function TpoNavigateRoutes() {
           <Route
             path={TPO_ROUTES.MANAGE_ASSESSMENTS}
             element={<CreateAssessment />}
+          />
+          <Route
+            path={TPO_ROUTES.MANAGE_INTERVIEWS}
+            element={<TpoInterviews />}
+          />
+          <Route
+            path={TPO_ROUTES.QUESTION_BANK}
+            element={<QuestionBank />}
           />
         </Route>
 

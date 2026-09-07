@@ -1,22 +1,24 @@
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./slices/authSlice";
-import studentProfileReducer from "./slices/studentProfileSlice";
 import jobReducer from "./slices/jobSlice";
-import { persistStore, persistReducer } from "redux-persist";
-import storage from "redux-persist/lib/storage"; // defaults to localStorage for web
-import { combineReducers } from "@reduxjs/toolkit";
-
-const rootReducer = combineReducers({
-  auth: authReducer,
-  studentProfile: studentProfileReducer,
-  jobs: jobReducer,
-});
+import studentProfileReducer from "./slices/studentProfileSlice";
+import apiSlice from "./api/apiSlice";
+import storage from "redux-persist/lib/storage";
+import { persistReducer, persistStore } from "redux-persist";
+import { combineReducers } from "redux";
 
 const persistConfig = {
   key: "root",
   storage,
-  whitelist: ["auth", "studentProfile"], // persist these slices
+  whitelist: ["auth"], // Only persist user auth state
 };
+
+const rootReducer = combineReducers({
+  auth: authReducer,
+  jobs: jobReducer,
+  studentProfile: studentProfileReducer,
+  [apiSlice.reducerPath]: apiSlice.reducer, // Add RTK Query reducer
+});
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 
@@ -24,14 +26,8 @@ export const store = configureStore({
   reducer: persistedReducer,
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
-      serializableCheck: {
-        ignoredActions: [
-          "persist/PERSIST",
-          "persist/REHYDRATE",
-          "persist/REGISTER",
-        ],
-      },
-    }),
+      serializableCheck: false,
+    }).concat(apiSlice.middleware), // Concat RTK Query middleware
 });
 
 export const persistor = persistStore(store);

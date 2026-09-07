@@ -31,7 +31,9 @@ import {
   AlertCircle,
   X,
   XCircle,
+  Sparkles,
 } from "lucide-react";
+import AIQuestionGenerator from "@/features/aiAssessment/components/AIQuestionGenerator";
 
 function CreateAssessment() {
   const [form, setForm] = useState({
@@ -44,6 +46,7 @@ function CreateAssessment() {
     difficulty: "",
     category: "",
     instructions: "",
+    jobId: "",
   });
 
   const [questions, setQuestions] = useState([
@@ -60,20 +63,35 @@ function CreateAssessment() {
   const [success, setSuccess] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  // Default to "create" tab since this is a create assessment page
   const [activeTab, setActiveTab] = useState("create");
   const [assessmentHistory, setAssessmentHistory] = useState([]);
+  const [activeJobs, setActiveJobs] = useState([]);
   const [editingAssessmentId, setEditingAssessmentId] = useState(null);
   const [viewingResultsId, setViewingResultsId] = useState(null);
   const [resultsData, setResultsData] = useState(null);
   const [loadingResults, setLoadingResults] = useState(false);
   const [selectedResult, setSelectedResult] = useState(null);
   const [showAnswerDetails, setShowAnswerDetails] = useState(false);
+  const [publishConfirmAssessment, setPublishConfirmAssessment] = useState(null);
+  const [validationErrorAssessment, setValidationErrorAssessment] = useState(null);
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
 
-  // Load assessment history from backend on mount
+  // Load assessment history and active jobs from backend on mount
   useEffect(() => {
     fetchAssessments();
+    fetchActiveJobs();
   }, []);
+
+  const fetchActiveJobs = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/jobs`, {
+        withCredentials: true,
+      });
+      setActiveJobs(response.data || []);
+    } catch (err) {
+      console.error("Error fetching active jobs for assessment linkage:", err);
+    }
+  };
 
   const fetchAssessments = async () => {
     try {
@@ -107,6 +125,7 @@ function CreateAssessment() {
       difficulty: "",
       category: "",
       instructions: "",
+      jobId: "",
     });
     setQuestions([
       {
@@ -211,6 +230,7 @@ function CreateAssessment() {
         passingScore: form.passingScore
           ? parseInt(form.passingScore)
           : undefined,
+        jobId: form.jobId || null,
         questions: questions.map((q) => ({
           question: q.question,
           type: q.type,
@@ -256,6 +276,7 @@ function CreateAssessment() {
         difficulty: "",
         category: "",
         instructions: "",
+        jobId: "",
       });
       setQuestions([
         {
@@ -331,6 +352,7 @@ function CreateAssessment() {
       difficulty: assessment.difficulty || "",
       category: assessment.category || "",
       instructions: assessment.instructions || "",
+      jobId: assessment.jobId || "",
     });
     setQuestions(
       assessment.questions?.map((q, idx) => ({
@@ -383,6 +405,143 @@ function CreateAssessment() {
     setActiveTab("history");
   };
 
+  const handleDuplicateAssessment = async (assessmentId) => {
+    setDuplicateLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await axios.post(
+        `${API_URL}/assessments/${assessmentId}/duplicate`,
+        {},
+        { withCredentials: true }
+      );
+      setSuccess("Assessment duplicated successfully as draft!");
+      await fetchAssessments();
+      // Load the newly duplicated draft for editing
+      if (res.data?.assessment) {
+        loadAssessmentForEdit(res.data.assessment);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Failed to duplicate assessment");
+    } finally {
+      setDuplicateLoading(false);
+    }
+  };
+
+  const handleValidateAssessment = async (assessmentId) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await axios.get(
+        `${API_URL}/assessments/${assessmentId}/validate`,
+        { withCredentials: true }
+      );
+      if (res.data?.isValid) {
+        setSuccess("Assessment is fully valid and ready to publish!");
+      } else {
+        setValidationErrorAssessment({
+          title: "Assessment Validation Issues",
+          issues: res.data?.issues || ["Unknown validation warning."],
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Failed to validate assessment");
+    }
+  };
+
+  const handlePublishAssessmentRequest = async (assessment) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      // First, query backend validate endpoint
+      const res = await axios.get(
+        `${API_URL}/assessments/${assessment._id || assessment.id}/validate`,
+        { withCredentials: true }
+      );
+      if (res.data?.isValid) {
+        // Set confirm dialog state
+        setPublishConfirmAssessment(assessment);
+      } else {
+        // Show validation issues modal
+        setValidationErrorAssessment({
+          title: assessment.title,
+          issues: res.data?.issues || [],
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Failed to validate assessment before publish");
+    }
+  };
+
+  const confirmPublishAssessment = async () => {
+    if (!publishConfirmAssessment) return;
+    const assessmentId = publishConfirmAssessment._id || publishConfirmAssessment.id;
+    setError(null);
+    setSuccess(null);
+    try {
+      await axios.put(
+        `${API_URL}/assessments/${assessmentId}`,
+        { status: "live" },
+        { withCredentials: true }
+      );
+      setSuccess("Assessment published successfully! It is now LIVE.");
+      setPublishConfirmAssessment(null);
+      await fetchAssessments();
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Failed to publish assessment");
+      setPublishConfirmAssessment(null);
+    }
+  };
+
+  const handleArchiveAssessment = async (assessmentId) => {
+    if (!confirm("Are you sure you want to archive this assessment? Once archived, students will not be able to take it, but historical results will be preserved.")) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    try {
+      await axios.put(
+        `${API_URL}/assessments/${assessmentId}`,
+        { status: "archived" },
+        { withCredentials: true }
+      );
+      setSuccess("Assessment archived successfully.");
+      await fetchAssessments();
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Failed to archive assessment");
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      draft: "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-100",
+      ready: "bg-blue-100 text-blue-700 border-blue-200 animate-pulse hover:bg-blue-100",
+      upcoming: "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100",
+      live: "bg-green-100 text-green-700 border-green-200 font-extrabold hover:bg-green-100",
+      ended: "bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-100",
+      archived: "bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-100",
+    };
+    const label = {
+      draft: "● Draft",
+      ready: "● Ready",
+      upcoming: "● Upcoming",
+      live: "● Live",
+      ended: "● Ended",
+      archived: "● Archived",
+    };
+    const statusVal = status || "draft";
+    return (
+      <Badge variant="outline" className={`${styles[statusVal] || styles.draft} text-[10px] px-2.5 py-1 uppercase tracking-wider font-semibold rounded-full border`}>
+        {label[statusVal] || statusVal}
+      </Badge>
+    );
+  };
+
   return (
     <div className="max-w-5xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-lg">
       <h2 className="text-3xl font-bold mb-6 text-blue-700">
@@ -392,7 +551,7 @@ function CreateAssessment() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList
           className={`grid w-full mb-6 ${
-            viewingResultsId ? "grid-cols-4" : "grid-cols-3"
+            viewingResultsId ? "grid-cols-5" : "grid-cols-4"
           }`}
         >
           <TabsTrigger
@@ -411,6 +570,10 @@ function CreateAssessment() {
           <TabsTrigger value="preview" className="flex items-center gap-2">
             <Eye className="h-4 w-4" />
             Preview
+          </TabsTrigger>
+          <TabsTrigger value="ai-generator" className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            AI Generator
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-2">
             <History className="h-4 w-4" />
@@ -570,6 +733,23 @@ function CreateAssessment() {
                   placeholder="Provide instructions for students taking this assessment..."
                   className="w-full"
                 />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-2">Associate with Job (Optional)</label>
+                <select
+                  name="jobId"
+                  value={form.jobId || ""}
+                  onChange={(e) => setForm({ ...form, jobId: e.target.value })}
+                  className="w-full h-10 px-3 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+                >
+                  <option value="">None - General Assessment</option>
+                  {activeJobs.map((job) => (
+                    <option key={job._id || job.id} value={job._id || job.id}>
+                      {job.title} at {job.company}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1004,73 +1184,27 @@ function CreateAssessment() {
                               {assessment.difficulty}
                             </span>
                           )}
-                          <Badge
-                            variant={
-                              assessment.status === "live"
-                                ? "default"
-                                : assessment.status === "published"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                            className={
-                              assessment.status === "live"
-                                ? "bg-green-100 text-green-700"
-                                : ""
-                            }
-                          >
-                            {assessment.status.charAt(0).toUpperCase() +
-                              assessment.status.slice(1)}
-                          </Badge>
+                          {getStatusBadge(assessment.computedStatus || assessment.status)}
                         </div>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => loadAssessmentForEdit(assessment)}
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Load for Edit
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        onClick={() =>
-                          fetchAssessmentResults(
-                            assessment._id || assessment.id,
-                          )
-                        }
-                      >
-                        <BarChart3 className="h-4 w-4 mr-2" />
-                        View Results
-                      </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* PREVIEW BUTTON */}
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // Format dates for datetime-local input
                           const formatDateForInput = (dateString) => {
                             if (!dateString) return "";
                             const date = new Date(dateString);
                             if (isNaN(date.getTime())) return "";
                             const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(
-                              2,
-                              "0",
-                            );
+                            const month = String(date.getMonth() + 1).padStart(2, "0");
                             const day = String(date.getDate()).padStart(2, "0");
-                            const hours = String(date.getHours()).padStart(
-                              2,
-                              "0",
-                            );
-                            const minutes = String(date.getMinutes()).padStart(
-                              2,
-                              "0",
-                            );
+                            const hours = String(date.getHours()).padStart(2, "0");
+                            const minutes = String(date.getMinutes()).padStart(2, "0");
                             return `${year}-${month}-${day}T${hours}:${minutes}`;
                           };
 
@@ -1078,8 +1212,7 @@ function CreateAssessment() {
                             title: assessment.title || "",
                             description: assessment.description || "",
                             duration: assessment.duration?.toString() || "",
-                            passingScore:
-                              assessment.passingScore?.toString() || "",
+                            passingScore: assessment.passingScore?.toString() || "",
                             startDate: formatDateForInput(assessment.startDate),
                             endDate: formatDateForInput(assessment.endDate),
                             difficulty: assessment.difficulty || "",
@@ -1092,10 +1225,7 @@ function CreateAssessment() {
                               question: q.question || "",
                               type: q.type || "multiple-choice",
                               options: q.options || ["", "", "", ""],
-                              correctAnswer:
-                                q.correctAnswer !== undefined
-                                  ? q.correctAnswer
-                                  : null,
+                              correctAnswer: q.correctAnswer !== undefined ? q.correctAnswer : null,
                               points: q.points || 1,
                             })) || [],
                           );
@@ -1105,118 +1235,232 @@ function CreateAssessment() {
                         <Eye className="h-4 w-4 mr-2" />
                         Preview
                       </Button>
-                      {/* Status Management */}
-                      {assessment.status === "live" ? (
+
+                      {/* DUPLICATE BUTTON */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={duplicateLoading}
+                        onClick={() => handleDuplicateAssessment(assessment._id || assessment.id)}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Duplicate
+                      </Button>
+
+                      {/* DRAFT STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status || "draft") === "draft" && (
                         <>
-                          <Badge className="bg-green-100 text-green-700">
-                            Live
-                          </Badge>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                            onClick={() => loadAssessmentForEdit(assessment)}
+                          >
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-blue-600 border-blue-100 hover:bg-blue-50"
+                            onClick={() => handleValidateAssessment(assessment._id || assessment.id)}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Validate
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-green-600 border-green-100 hover:bg-green-50"
+                            onClick={() => handlePublishAssessmentRequest(assessment)}
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Publish
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-100 hover:bg-red-50"
+                            onClick={() => deleteAssessment(assessment._id || assessment.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </Button>
+                        </>
+                      )}
+
+                      {/* READY STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status) === "ready" && (
+                        <>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                            onClick={() => handlePublishAssessmentRequest(assessment)}
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Publish Assessment
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadAssessmentForEdit(assessment)}
+                          >
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-100 hover:bg-red-50"
+                            onClick={() => deleteAssessment(assessment._id || assessment.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </Button>
+                        </>
+                      )}
+
+                      {/* UPCOMING STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status) === "upcoming" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-orange-600 border-orange-100 hover:bg-orange-50"
                             onClick={async () => {
-                              if (
-                                !confirm(
-                                  "Are you sure you want to change this assessment from live to draft? Students will no longer be able to access it.",
-                                )
-                              ) {
-                                return;
-                              }
-                              try {
-                                await axios.put(
-                                  `${API_URL}/assessments/${
-                                    assessment._id || assessment.id
-                                  }`,
-                                  { status: "draft" },
-                                  { withCredentials: true },
-                                );
-                                setSuccess("Assessment changed to draft!");
-                                await fetchAssessments();
-                              } catch (err) {
-                                setError(
-                                  err.response?.data?.message ||
-                                    "Failed to change assessment status",
-                                );
+                              if (confirm("Withdraw this assessment schedule? It will return to draft status.")) {
+                                try {
+                                  await axios.put(
+                                    `${API_URL}/assessments/${assessment._id || assessment.id}`,
+                                    { status: "draft" },
+                                    { withCredentials: true }
+                                  );
+                                  setSuccess("Assessment returned to draft.");
+                                  await fetchAssessments();
+                                } catch (err) {
+                                  setError(err.response?.data?.message || "Failed to withdraw assessment");
+                                }
                               }
                             }}
                           >
                             <Edit className="h-4 w-4 mr-2" />
-                            Make Draft
+                            Cancel Schedule
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-purple-600 border-purple-100 hover:bg-purple-50"
+                            onClick={() => handleArchiveAssessment(assessment._id || assessment.id)}
+                          >
+                            <History className="h-4 w-4 mr-2" />
+                            Archive
                           </Button>
                         </>
-                      ) : assessment.status === "draft" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          onClick={async () => {
-                            try {
-                              await axios.put(
-                                `${API_URL}/assessments/${
-                                  assessment._id || assessment.id
-                                }`,
-                                { status: "live" },
-                                { withCredentials: true },
-                              );
-                              setSuccess("Assessment is now live!");
-                              await fetchAssessments();
-                            } catch (err) {
-                              setError(
-                                err.response?.data?.message ||
-                                  "Failed to make assessment live",
-                              );
-                            }
-                          }}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Make Live
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          onClick={async () => {
-                            try {
-                              await axios.put(
-                                `${API_URL}/assessments/${
-                                  assessment._id || assessment.id
-                                }`,
-                                { status: "live" },
-                                { withCredentials: true },
-                              );
-                              setSuccess("Assessment is now live!");
-                              await fetchAssessments();
-                            } catch (err) {
-                              setError(
-                                err.response?.data?.message ||
-                                  "Failed to make assessment live",
-                              );
-                            }
-                          }}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Make Live
-                        </Button>
                       )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => {
-                          deleteAssessment(assessment._id || assessment.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </Button>
+
+                      {/* LIVE STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status) === "live" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-blue-600 border-blue-100 hover:bg-blue-50 font-bold"
+                            onClick={() => fetchAssessmentResults(assessment._id || assessment.id)}
+                          >
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                            View Results
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-purple-600 border-purple-100 hover:bg-purple-50"
+                            onClick={() => handleArchiveAssessment(assessment._id || assessment.id)}
+                          >
+                            <History className="h-4 w-4 mr-2" />
+                            Archive
+                          </Button>
+                        </>
+                      )}
+
+                      {/* ENDED STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status) === "ended" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-blue-600 border-blue-100 hover:bg-blue-50 font-bold"
+                            onClick={() => fetchAssessmentResults(assessment._id || assessment.id)}
+                          >
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                            View Results
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-purple-600 border-purple-100 hover:bg-purple-50"
+                            onClick={() => handleArchiveAssessment(assessment._id || assessment.id)}
+                          >
+                            <History className="h-4 w-4 mr-2" />
+                            Archive
+                          </Button>
+                        </>
+                      )}
+
+                      {/* ARCHIVED STATE ACTIONS */}
+                      {(assessment.computedStatus || assessment.status) === "archived" && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-blue-600 border-blue-100 hover:bg-blue-50"
+                            onClick={() => fetchAssessmentResults(assessment._id || assessment.id)}
+                          >
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                            View Results
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600 border-red-100 hover:bg-red-50"
+                            onClick={() => deleteAssessment(assessment._id || assessment.id)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               ))
             )}
           </div>
+        </TabsContent>
+
+        {/* AI Generator Tab */}
+        <TabsContent value="ai-generator">
+          <AIQuestionGenerator
+            onImport={(data) => {
+              setForm({
+                ...form,
+                title: data.title || "",
+                description: data.description || "",
+                duration: data.duration?.toString() || "30",
+              });
+              setQuestions(
+                data.questions.map((q, idx) => ({
+                  id: idx + 1,
+                  question: q.question,
+                  type: "multiple-choice",
+                  options: q.options,
+                  correctAnswer: q.correctAnswer,
+                  points: q.points || 10,
+                }))
+              );
+              setActiveTab("create");
+              setSuccess("AI assessment loaded! Review and save your draft below.");
+            }}
+          />
         </TabsContent>
 
         {/* Results Tab */}
@@ -1584,6 +1828,101 @@ function CreateAssessment() {
                     </Card>
                   );
                 })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {/* Publish Confirmation Modal */}
+      {publishConfirmAssessment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full shadow-lg rounded-2xl bg-white border border-slate-100 overflow-hidden">
+            <CardHeader className="border-b border-slate-100 p-5">
+              <CardTitle className="text-lg font-extrabold text-slate-800 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-green-600 animate-bounce" />
+                Publish Assessment?
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4">
+              <div className="space-y-2">
+                <h4 className="text-sm font-bold text-slate-700">{publishConfirmAssessment.title}</h4>
+                <p className="text-xs text-slate-500 leading-relaxed">{publishConfirmAssessment.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs">
+                <div>
+                  <span className="text-slate-400 font-bold block uppercase tracking-wider text-[9px]">Questions</span>
+                  <strong className="text-slate-700 font-extrabold">{publishConfirmAssessment.questions?.length || 0} Qs</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-bold block uppercase tracking-wider text-[9px]">Duration</span>
+                  <strong className="text-slate-700 font-extrabold">{publishConfirmAssessment.duration} minutes</strong>
+                </div>
+                {publishConfirmAssessment.startDate && (
+                  <div className="col-span-2">
+                    <span className="text-slate-400 font-bold block uppercase tracking-wider text-[9px]">Scheduled Range</span>
+                    <strong className="text-slate-700 font-extrabold">
+                      {new Date(publishConfirmAssessment.startDate).toLocaleString()} to {publishConfirmAssessment.endDate ? new Date(publishConfirmAssessment.endDate).toLocaleString() : "Indefinite"}
+                    </strong>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-100 p-2.5 rounded-xl">
+                ⚠️ Once published, this assessment goes live, and all eligible students can attempt it. You will no longer be able to edit questions.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <Button
+                  variant="ghost"
+                  className="rounded-xl text-xs h-10 font-bold text-slate-500 hover:text-slate-800"
+                  onClick={() => setPublishConfirmAssessment(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-xs h-10 px-5"
+                  onClick={confirmPublishAssessment}
+                >
+                  Publish Assessment
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Validation Errors Modal */}
+      {validationErrorAssessment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-lg w-full shadow-lg rounded-2xl bg-white border border-slate-100 overflow-hidden">
+            <CardHeader className="border-b border-slate-100 p-5 bg-red-50/50">
+              <CardTitle className="text-base font-extrabold text-red-600 flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+                Cannot Publish Assessment
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 space-y-4">
+              <p className="text-xs text-slate-500 font-bold">
+                Please fix the following {validationErrorAssessment.issues?.length || 0} issues before publishing:
+              </p>
+
+              <ul className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                {validationErrorAssessment.issues?.map((issue, idx) => (
+                  <li key={idx} className="text-xs text-slate-700 bg-slate-50 border border-slate-100 p-2.5 rounded-xl flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5 shrink-0" />
+                    <span className="font-semibold">{issue}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="flex items-center justify-end pt-2">
+                <Button
+                  className="bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs h-10 px-5"
+                  onClick={() => setValidationErrorAssessment(null)}
+                >
+                  Close
+                </Button>
               </div>
             </CardContent>
           </Card>

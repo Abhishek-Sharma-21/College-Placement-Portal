@@ -17,14 +17,21 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: "placement-portal-profiles", // A folder name in your Cloudinary account
+    folder: "placement-portal-profiles",
     allowed_formats: ["jpg", "png", "jpeg"],
-    // You can add transformations here if needed
-    // transformation: [{ width: 500, height: 500, crop: 'limit' }]
+    // Apply auto-cropping, optimization, and scaling on Cloudinary side
+    transformation: [
+      { width: 400, height: 400, crop: "fill", gravity: "face", quality: "auto", fetch_format: "auto" }
+    ],
   },
 });
 
-// Create the Multer upload instance
-const upload = multer({ storage: storage });
+// Create the Multer upload instance with 2MB file size limits
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB max size limit
+  },
+});
 
 export default upload;

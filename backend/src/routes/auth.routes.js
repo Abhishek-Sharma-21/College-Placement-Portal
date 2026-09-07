@@ -1,13 +1,16 @@
 import { Router } from "express";
-// 1. Import all the controllers you need
-import { register, login, logout } from "../controllers/auth.controller.js";
+import { register, login, logout, refresh } from "../controllers/auth.controller.js";
+import { validate } from "../validators/index.js";
+import { registerSchema, loginSchema } from "../validators/auth.validator.js";
 
 const router = Router();
 
-router.post("/register", register);
+router.post("/register", validate(registerSchema), register);
 
-router.post("/login", login);
+router.post("/login", validate(loginSchema), login);
 
 router.post("/logout", logout);
+
+router.post("/refresh", refresh); // Add refresh token endpoint
 
 export default router;

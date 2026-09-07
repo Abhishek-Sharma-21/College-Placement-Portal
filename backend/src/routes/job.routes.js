@@ -6,14 +6,14 @@ import {
   updateJob,
   deleteJob,
 } from "../controllers/job.controller.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { protect, isAdmin } from "../middlewares/authMiddleware.js";
 
 const router = Router();
 
-router.post("/", protect, createJob);
+router.post("/", protect, isAdmin, createJob);
 router.get("/", protect, getAllJobs);
 router.get("/:id", protect, getJobById);
-router.put("/:id", protect, updateJob);
-router.delete("/:id", protect, deleteJob);
+router.put("/:id", protect, isAdmin, updateJob);
+router.delete("/:id", protect, isAdmin, deleteJob);
 
 export default router;

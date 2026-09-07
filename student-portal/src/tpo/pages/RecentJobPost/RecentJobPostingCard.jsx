@@ -54,6 +54,7 @@ import {
   X,
   MapPin,
   Briefcase,
+  Calendar,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -71,6 +72,7 @@ const RecentJobPostingCard = ({ job }) => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [showJobModal, setShowJobModal] = useState(false);
+  const [viewMode, setViewMode] = useState("table"); // "table" or "funnel"
   const itemsPerPage = 10;
 
   const handleDelete = async () => {
@@ -366,12 +368,32 @@ const RecentJobPostingCard = ({ job }) => {
 
               {/* Applicants Section */}
               <div className="mt-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-4 border-b pb-3 border-slate-100">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <UserCheck className="h-5 w-5" />
                     Applicants ({applications.length})
                   </h3>
                   <div className="flex items-center gap-2">
+                    <div className="flex bg-slate-100 rounded-xl p-1 mr-2 border border-slate-200/40">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("table")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          viewMode === "table" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-900"
+                        }`}
+                      >
+                        Table
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode("funnel")}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                          viewMode === "funnel" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-900"
+                        }`}
+                      >
+                        Funnel
+                      </button>
+                    </div>
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                       <Input
@@ -414,11 +436,104 @@ const RecentJobPostingCard = ({ job }) => {
                       No applications yet.
                     </p>
                   </div>
+                ) : viewMode === "funnel" ? (
+                  <div className="flex gap-4 overflow-x-auto pb-4 pt-2 min-h-[480px]">
+                    {[
+                      { key: "pending", label: "Applied", color: "bg-yellow-500/10 text-yellow-700 border-yellow-200/50" },
+                      { key: "reviewed", label: "Under Review", color: "bg-blue-500/10 text-blue-700 border-blue-200/50" },
+                      { key: "shortlisted", label: "Shortlisted", color: "bg-purple-500/10 text-purple-700 border-purple-200/50" },
+                      { key: "accepted", label: "Accepted", color: "bg-green-500/10 text-green-700 border-green-200/50" },
+                      { key: "rejected", label: "Rejected", color: "bg-red-500/10 text-red-700 border-red-200/50" },
+                    ].map((col) => {
+                      const colApps = applications.filter((app) => {
+                        const matchesSearch =
+                          searchQuery === "" ||
+                          app.student?.fullName
+                            ?.toLowerCase()
+                            .includes(searchQuery.toLowerCase()) ||
+                          app.student?.email
+                            ?.toLowerCase()
+                            .includes(searchQuery.toLowerCase());
+                        return app.status === col.key && matchesSearch;
+                      });
+                      
+                      return (
+                        <div
+                          key={col.key}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            const id = e.dataTransfer.getData("applicationId");
+                            if (id) updateApplicationStatus(id, col.key);
+                          }}
+                          className="flex-1 min-w-[210px] max-w-[260px] bg-slate-50/50 border border-slate-100 rounded-2xl p-3 flex flex-col space-y-3"
+                        >
+                          <div className={`flex items-center justify-between p-2 rounded-xl border ${col.color}`}>
+                            <span className="text-xs font-bold">{col.label}</span>
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white/80 shadow-sm">{colApps.length}</span>
+                          </div>
+
+                          <div className="flex-1 space-y-2 overflow-y-auto max-h-[360px] pb-2">
+                            {colApps.map((app) => (
+                              <div
+                                key={app._id || app.id}
+                                draggable
+                                onDragStart={(e) => e.dataTransfer.setData("applicationId", app._id || app.id)}
+                                className="bg-white p-3 rounded-xl border border-slate-200/60 shadow-sm cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md transition-all space-y-2"
+                              >
+                                <div className="space-y-0.5">
+                                  <h4 className="text-xs font-extrabold text-gray-900 leading-tight">{app.student?.fullName || "Student"}</h4>
+                                  <p className="text-[9px] text-gray-400 font-semibold truncate">{app.student?.email}</p>
+                                </div>
+                                <div className="flex items-center justify-between pt-1 border-t border-slate-50 text-[9px] text-gray-400">
+                                  <span>{new Date(app.appliedAt).toLocaleDateString()}</span>
+                                  {/* Quick move buttons */}
+                                  <div className="flex space-x-1">
+                                    {col.key !== "pending" && (
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          const prevStatuses = ["pending", "reviewed", "shortlisted", "accepted", "rejected"];
+                                          const idx = prevStatuses.indexOf(col.key);
+                                          if (idx > 0) updateApplicationStatus(app._id || app.id, prevStatuses[idx - 1]);
+                                        }}
+                                        className="p-1 hover:bg-slate-100 rounded text-gray-600 font-bold"
+                                        title="Move Left"
+                                      >
+                                        ‹
+                                      </button>
+                                    )}
+                                    {col.key !== "rejected" && col.key !== "accepted" && (
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          const nextStatuses = ["pending", "reviewed", "shortlisted", "accepted", "rejected"];
+                                          const idx = nextStatuses.indexOf(col.key);
+                                          if (idx >= 0 && idx < nextStatuses.length - 1) updateApplicationStatus(app._id || app.id, nextStatuses[idx + 1]);
+                                        }}
+                                        className="p-1 hover:bg-slate-100 rounded text-gray-600 font-bold"
+                                        title="Move Right"
+                                      >
+                                        ›
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                            {colApps.length === 0 && (
+                              <div className="text-center py-8 text-[10px] text-gray-400 border border-dashed border-slate-200 rounded-xl">
+                                Drag applicants here
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
                   <>
                     {/* Filtered and paginated applications */}
                     {(() => {
-                      // Filter applications
                       let filtered = applications.filter((app) => {
                         const matchesSearch =
                           searchQuery === "" ||
@@ -530,137 +645,77 @@ const RecentJobPostingCard = ({ job }) => {
                                           </p>
                                         </td>
                                         <td className="py-3 px-4 text-center">
-                                          <div
-                                            className="relative inline-block"
-                                            data-menu-id={application._id}
-                                          >
-                                            <button
-                                              type="button"
-                                              className="p-1 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                                              aria-label="More actions"
-                                              disabled={
-                                                updatingStatus ===
-                                                application._id
-                                              }
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (
-                                                  updatingStatus !==
-                                                  application._id
-                                                ) {
-                                                  setOpenMenuId(
-                                                    openMenuId ===
-                                                      application._id
-                                                      ? null
-                                                      : application._id,
-                                                  );
-                                                }
-                                              }}
-                                            >
-                                              {updatingStatus ===
-                                              application._id ? (
-                                                <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                                              ) : (
-                                                <MoreVertical className="h-4 w-4" />
-                                              )}
-                                            </button>
-                                            {openMenuId === application._id &&
-                                              updatingStatus !==
-                                                application._id && (
-                                                <div
-                                                  className="absolute right-0 top-8 bg-white border shadow-lg rounded-md w-40 z-50 overflow-hidden"
-                                                  onClick={(e) =>
-                                                    e.stopPropagation()
-                                                  }
-                                                >
-                                                  {application.status ===
-                                                    "pending" && (
+                                          <div className="flex items-center justify-center gap-1.5 min-h-[32px]">
+                                            {updatingStatus === application._id ? (
+                                              <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                                            ) : (
+                                              <>
+                                                {/* If Applied or Under Review, show Shortlist button */}
+                                                {(application.status === "pending" || application.status === "reviewed") && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateApplicationStatus(application._id, "shortlisted")}
+                                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm shadow-blue-100 flex items-center gap-1"
+                                                  >
+                                                    <UserCheck className="h-3.5 w-3.5" /> Shortlist
+                                                  </button>
+                                                )}
+
+                                                {/* If Shortlisted, show Accept button */}
+                                                {application.status === "shortlisted" && (
+                                                  <>
                                                     <button
                                                       type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-blue-50 text-blue-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        updatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateApplicationStatus(
-                                                          application._id,
-                                                          "shortlisted",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <UserCheck className="h-4 w-4" />{" "}
-                                                      Shortlist
-                                                    </button>
-                                                  )}
-                                                  {application.status ===
-                                                    "shortlisted" && (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        updatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateApplicationStatus(
-                                                          application._id,
-                                                          "pending",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <RotateCcw className="h-4 w-4" />{" "}
-                                                      Move to Pending
-                                                    </button>
-                                                  )}
-                                                  {application.status !==
-                                                    "accepted" && (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-green-50 text-green-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        updatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateApplicationStatus(
-                                                          application._id,
-                                                          "accepted",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <UserCheck2 className="h-4 w-4" />{" "}
-                                                      Accept
-                                                    </button>
-                                                  )}
-                                                  {application.status !==
-                                                    "rejected" &&
-                                                    application.status !==
-                                                      "accepted" && (
-                                                      <button
-                                                        type="button"
-                                                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-red-50 text-red-600 transition-colors disabled:opacity-50"
-                                                        disabled={
-                                                          updatingStatus ===
-                                                          application._id
+                                                      onClick={() => navigate("/tpo/interviews", {
+                                                        state: {
+                                                          jobId: job._id || job.id,
+                                                          studentId: application.studentId
                                                         }
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          updateApplicationStatus(
-                                                            application._id,
-                                                            "rejected",
-                                                          );
-                                                        }}
-                                                      >
-                                                        <UserX className="h-4 w-4" />{" "}
-                                                        Reject
-                                                      </button>
-                                                    )}
-                                                </div>
-                                              )}
+                                                      })}
+                                                      className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-xl transition-colors border border-blue-100 flex items-center gap-1"
+                                                    >
+                                                      <Calendar className="h-3.5 w-3.5" /> Schedule Int
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => updateApplicationStatus(application._id, "accepted")}
+                                                      className="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm shadow-green-100 flex items-center gap-1"
+                                                    >
+                                                      <UserCheck2 className="h-3.5 w-3.5" /> Accept
+                                                    </button>
+                                                  </>
+                                                )}
+
+                                                {/* Show Reject button unless already rejected or accepted */}
+                                                {application.status !== "rejected" && application.status !== "accepted" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateApplicationStatus(application._id, "rejected")}
+                                                    className="px-2.5 py-1.5 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                                                  >
+                                                    <UserX className="h-3.5 w-3.5" /> Reject
+                                                  </button>
+                                                )}
+
+                                                {/* Show Re-consider button if rejected */}
+                                                {application.status === "rejected" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateApplicationStatus(application._id, "reviewed")}
+                                                    className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                                                  >
+                                                    <RotateCcw className="h-3.5 w-3.5" /> Re-consider
+                                                  </button>
+                                                )}
+
+                                                {/* If accepted, show Placed status */}
+                                                {application.status === "accepted" && (
+                                                  <span className="text-xs font-black text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 flex items-center gap-1 select-none animate-pulse">
+                                                    🎉 Placed
+                                                  </span>
+                                                )}
+                                              </>
+                                            )}
                                           </div>
                                         </td>
                                       </tr>
@@ -880,7 +935,7 @@ function RecentJobPostings() {
             const statsPromises = completed.map(async (job) => {
               try {
                 const res = await axios.get(
-                  `http://localhost:4000/api/applications/job/${job._id}`,
+                  `${API_URL}/applications/job/${job._id}`,
                   { withCredentials: true },
                 );
                 const applications = res.data;
@@ -1305,138 +1360,63 @@ function RecentJobPostings() {
                                           </p>
                                         </td>
                                         <td className="py-3 px-4 text-center">
-                                          <div
-                                            className="relative inline-block"
-                                            data-menu-id={application._id}
-                                          >
-                                            <button
-                                              type="button"
-                                              className="p-1 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                                              aria-label="More actions"
-                                              disabled={
-                                                completedUpdatingStatus ===
-                                                application._id
-                                              }
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (
-                                                  completedUpdatingStatus !==
-                                                  application._id
-                                                ) {
-                                                  setCompletedOpenMenuId(
-                                                    completedOpenMenuId ===
-                                                      application._id
-                                                      ? null
-                                                      : application._id,
-                                                  );
-                                                }
-                                              }}
-                                            >
-                                              {completedUpdatingStatus ===
-                                              application._id ? (
-                                                <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                                              ) : (
-                                                <MoreVertical className="h-4 w-4" />
-                                              )}
-                                            </button>
-                                            {completedOpenMenuId ===
-                                              application._id &&
-                                              completedUpdatingStatus !==
-                                                application._id && (
-                                                <div
-                                                  className="absolute right-0 top-8 bg-white border shadow-lg rounded-md w-40 z-50 overflow-hidden"
-                                                  onClick={(e) =>
-                                                    e.stopPropagation()
-                                                  }
-                                                >
-                                                  {application.status ===
-                                                    "pending" && (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-blue-50 text-blue-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        completedUpdatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateCompletedApplicationStatus(
-                                                          application._id,
-                                                          "shortlisted",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <UserCheck className="h-4 w-4" />{" "}
-                                                      Shortlist
-                                                    </button>
-                                                  )}
-                                                  {application.status ===
-                                                    "shortlisted" && (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        completedUpdatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateCompletedApplicationStatus(
-                                                          application._id,
-                                                          "pending",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <RotateCcw className="h-4 w-4" />{" "}
-                                                      Move to Pending
-                                                    </button>
-                                                  )}
-                                                  {application.status !==
-                                                    "accepted" && (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-green-50 text-green-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        completedUpdatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateCompletedApplicationStatus(
-                                                          application._id,
-                                                          "accepted",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <UserCheck2 className="h-4 w-4" />{" "}
-                                                      Accept
-                                                    </button>
-                                                  )}
-                                                  {application.status ===
-                                                    "pending" ||
-                                                  application.status ===
-                                                    "shortlisted" ? (
-                                                    <button
-                                                      type="button"
-                                                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-red-50 text-red-600 transition-colors disabled:opacity-50"
-                                                      disabled={
-                                                        completedUpdatingStatus ===
-                                                        application._id
-                                                      }
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        updateCompletedApplicationStatus(
-                                                          application._id,
-                                                          "rejected",
-                                                        );
-                                                      }}
-                                                    >
-                                                      <UserX className="h-4 w-4" />{" "}
-                                                      Reject
-                                                    </button>
-                                                  ) : null}
-                                                </div>
-                                              )}
+                                          <div className="flex items-center justify-center gap-1.5 min-h-[32px]">
+                                            {completedUpdatingStatus === application._id ? (
+                                              <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                                            ) : (
+                                              <>
+                                                {/* If Applied or Under Review, show Shortlist button */}
+                                                {(application.status === "pending" || application.status === "reviewed") && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateCompletedApplicationStatus(application._id, "shortlisted")}
+                                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm shadow-blue-100 flex items-center gap-1"
+                                                  >
+                                                    <UserCheck className="h-3.5 w-3.5" /> Shortlist
+                                                  </button>
+                                                )}
+
+                                                {/* If Shortlisted, show Accept button */}
+                                                {application.status === "shortlisted" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateCompletedApplicationStatus(application._id, "accepted")}
+                                                    className="px-2.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm shadow-green-100 flex items-center gap-1"
+                                                  >
+                                                    <UserCheck2 className="h-3.5 w-3.5" /> Accept
+                                                  </button>
+                                                )}
+
+                                                {/* Show Reject button unless already rejected or accepted */}
+                                                {application.status !== "rejected" && application.status !== "accepted" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateCompletedApplicationStatus(application._id, "rejected")}
+                                                    className="px-2.5 py-1.5 border border-red-200 hover:bg-red-50 text-red-600 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                                                  >
+                                                    <UserX className="h-3.5 w-3.5" /> Reject
+                                                  </button>
+                                                )}
+
+                                                {/* Show Re-consider button if rejected */}
+                                                {application.status === "rejected" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateCompletedApplicationStatus(application._id, "reviewed")}
+                                                    className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+                                                  >
+                                                    <RotateCcw className="h-3.5 w-3.5" /> Re-consider
+                                                  </button>
+                                                )}
+
+                                                {/* If accepted, show Placed status */}
+                                                {application.status === "accepted" && (
+                                                  <span className="text-xs font-black text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-100 flex items-center gap-1 select-none animate-pulse">
+                                                    🎉 Placed
+                                                  </span>
+                                                )}
+                                              </>
+                                            )}
                                           </div>
                                         </td>
                                       </tr>

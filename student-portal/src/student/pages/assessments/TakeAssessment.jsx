@@ -13,6 +13,7 @@ const TakeAssessment = () => {
   const navigate = useNavigate();
   const [assessment, setAssessment] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [reviewed, setReviewed] = useState({});
   const [timeLeft, setTimeLeft] = useState(0); // in seconds
   const [startedAt, setStartedAt] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,7 @@ const TakeAssessment = () => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [warnings, setWarnings] = useState(0);
   const timerRef = useRef(null);
   const autoSaveRef = useRef(null);
 
@@ -46,6 +48,37 @@ const TakeAssessment = () => {
     };
   }, [id, submitted, submitting]);
 
+  // Tab switch and screen blur warning cheat evaluation
+  useEffect(() => {
+    if (submitted || submitting || !assessment) return;
+
+    const handleWindowBlur = () => {
+      setWarnings((prev) => {
+        const next = prev + 1;
+        alert(`⚠️ WARNING: You have left the assessment screen (${next}/3). Exits are logged and flagged for TPO review.`);
+        return next;
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setWarnings((prev) => {
+          const next = prev + 1;
+          alert(`⚠️ WARNING: Tab switching or minimized browser is flagged (${next}/3).`);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [submitted, submitting, assessment]);
+
   useEffect(() => {
     if (timeLeft <= 0 && startedAt && !submitted && !submitting) {
       handleAutoSubmit();
@@ -58,7 +91,46 @@ const TakeAssessment = () => {
       const response = await axios.get(`${API_URL}/assessments/${id}/take`, {
         withCredentials: true,
       });
-      setAssessment(response.data);
+
+      // Map original question index and options indices before shuffling
+      const rawQuestions = (response.data.questions || []).map((q, idx) => {
+        const mappedOptions = (q.options || []).map((opt, oIdx) => ({
+          text: opt,
+          originalOptionIndex: oIdx,
+        }));
+        return {
+          ...q,
+          originalIndex: idx,
+          options: mappedOptions,
+        };
+      });
+
+      let questionsToUse = [...rawQuestions];
+      if (response.data.randomizeQuestions) {
+        for (let i = questionsToUse.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [questionsToUse[i], questionsToUse[j]] = [questionsToUse[j], questionsToUse[i]];
+        }
+      }
+
+      if (response.data.randomizeOptions) {
+        questionsToUse = questionsToUse.map((q) => {
+          const shuffledOptions = [...q.options];
+          for (let i = shuffledOptions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+          }
+          return {
+            ...q,
+            options: shuffledOptions,
+          };
+        });
+      }
+
+      setAssessment({
+        ...response.data,
+        questions: questionsToUse,
+      });
       const savedData = response.data.startedAt || new Date();
       setStartedAt(savedData);
 
@@ -145,9 +217,10 @@ const TakeAssessment = () => {
 
       // Fill in unanswered questions
       for (let i = 0; i < assessment.questions.length; i++) {
-        if (!answersArray.find((a) => a.questionIndex === i)) {
+        const originalIndex = assessment.questions[i].originalIndex ?? i;
+        if (!answersArray.find((a) => a.questionIndex === originalIndex)) {
           answersArray.push({
-            questionIndex: i,
+            questionIndex: originalIndex,
             selectedAnswer: null,
           });
         }
@@ -159,6 +232,7 @@ const TakeAssessment = () => {
           answers: answersArray,
           startedAt,
           autoSubmitted,
+          warnings,
         },
         { withCredentials: true },
       );
@@ -349,21 +423,31 @@ const TakeAssessment = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-5 lg:grid-cols-1 gap-2">
-                {assessment.questions.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setCurrentQuestion(index)}
-                    className={`p-2 rounded text-sm font-medium transition-colors ${
-                      currentQuestion === index
-                        ? "bg-blue-600 text-white"
-                        : answers[index] !== undefined
-                          ? "bg-green-100 text-green-700 hover:bg-green-200"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    {index + 1}
-                  </button>
-                ))}
+                {assessment.questions.map((q, index) => {
+                  const isCurrent = currentQuestion === index;
+                  const isAns = answers[q.originalIndex] !== undefined && answers[q.originalIndex] !== null;
+                  const isRev = reviewed[q.originalIndex] === true;
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentQuestion(index)}
+                      className={`p-2 rounded text-sm font-medium transition-colors flex items-center justify-between ${
+                        isCurrent
+                          ? "bg-blue-600 text-white"
+                          : isRev
+                            ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300"
+                            : isAns
+                              ? "bg-green-100 text-green-700 hover:bg-green-200"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <span>{index + 1}</span>
+                      <span className="text-[10px]">
+                        {isRev ? "🔖" : isAns ? "✓" : "?"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -387,39 +471,59 @@ const TakeAssessment = () => {
               <p className="text-lg font-medium">{currentQ.question}</p>
 
               <div className="space-y-2">
-                {currentQ.options.map((option, optionIndex) => (
-                  <label
-                    key={optionIndex}
-                    className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-                      answers[currentQuestion] === optionIndex
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name={`question-${currentQuestion}`}
-                      checked={answers[currentQuestion] === optionIndex}
-                      onChange={() =>
-                        handleAnswerChange(currentQuestion, optionIndex)
-                      }
-                      className="w-5 h-5 text-blue-600"
-                    />
-                    <span className="flex-1">{option}</span>
-                  </label>
-                ))}
+                {currentQ.options.map((option, optionIndex) => {
+                  const optIndex = option.originalOptionIndex !== undefined ? option.originalOptionIndex : optionIndex;
+                  const optText = option.text !== undefined ? option.text : option;
+                  const isSelected = answers[currentQ.originalIndex] === optIndex;
+                  return (
+                    <label
+                      key={optionIndex}
+                      className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`question-${currentQuestion}`}
+                        checked={isSelected}
+                        onChange={() =>
+                          handleAnswerChange(currentQ.originalIndex, optIndex)
+                        }
+                        className="w-5 h-5 text-blue-600"
+                      />
+                      <span className="flex-1">{optText}</span>
+                    </label>
+                  );
+                })}
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    setCurrentQuestion(Math.max(0, currentQuestion - 1))
-                  }
-                  disabled={currentQuestion === 0}
-                >
-                  Previous
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      setCurrentQuestion(Math.max(0, currentQuestion - 1))
+                    }
+                    disabled={currentQuestion === 0}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const isRev = reviewed[currentQ.originalIndex] === true;
+                      setReviewed((prev) => ({
+                        ...prev,
+                        [currentQ.originalIndex]: !isRev,
+                      }));
+                    }}
+                    className={reviewed[currentQ.originalIndex] ? "bg-amber-50 text-amber-700 border-amber-300" : ""}
+                  >
+                    {reviewed[currentQ.originalIndex] ? "Unmark Review" : "🔖 Mark for Review"}
+                  </Button>
+                </div>
                 <div className="flex gap-2">
                   {currentQuestion < totalQuestions - 1 ? (
                     <Button
