@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "@/student/layout/AppLayout";
 import { ROUTES } from "@/Routes/studentRout/routes.jsx";
 import ProtectedRoute from "@/Routes/ProtectedRoute";
+import PublicRoute from "@/Routes/PublicRoute";
+
 
 const DashboardContent = lazy(
   () => import("@/student/pages/dashboard/DashboardContent"),
@@ -56,9 +58,23 @@ export default function StudentRoutes() {
           <Route path={ROUTES.INTERVIEWS} element={<Interviews />} />
         </Route>
 
-        {/* Auth routes (no persistent layout) */}
-        <Route path={ROUTES.LOGIN} element={<Login />} />
-        <Route path={ROUTES.REGISTER} element={<Register />} />
+        {/* Auth routes — redirect to dashboard if already logged in */}
+        <Route
+          path={ROUTES.LOGIN}
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path={ROUTES.REGISTER}
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to={ROUTES.DASHBOARD} replace />} />

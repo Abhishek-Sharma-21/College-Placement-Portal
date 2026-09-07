@@ -251,3 +251,15 @@ export const refresh = async (req, res) => {
     res.status(401).json({ message: "Unauthorized token refresh failed." });
   }
 };
+
+// --- Get Me Controller ---
+// Requires the `protect` middleware to be applied on the route
+export const getMe = (req, res) => {
+  // req.user is populated by the protect middleware
+  res.status(200).json({
+    _id: req.user._id,
+    fullName: req.user.fullName,
+    email: req.user.email,
+    role: req.user.role,
+  });
+};

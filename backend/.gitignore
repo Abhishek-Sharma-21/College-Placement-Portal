@@ -1,29 +1,71 @@
+# ============================
+# SECURITY - NEVER COMMIT THESE
+# ============================
+.env
+.env.*
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+secrets/
+config/secrets.*
+credentials.json
+service-account*.json
+
+# ============================
 # Dependencies
+# ============================
 node_modules/
+
+# ============================
+# Build Output
+# ============================
 dist/
 build/
 
-# Environment Variables (CRITICAL: Never push these)
-.env
-.env.*
+# ============================
+# Upload / User Data (may contain private files)
+# ============================
+uploads/
+temp/
+tmp/
 
-# Debug logs
+# ============================
+# Logs (can leak sensitive info)
+# ============================
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-logs/
-*.log
 
+# ============================
+# Databases (local dev data)
+# ============================
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# ============================
 # OS Metadata
+# ============================
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Editor/IDE configs
+# ============================
+# Editor / IDE
+# ============================
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Databases (if using local sqlite or similar)
-*.db
-*.sqlite
+# ============================
+# Runtime / Testing
+# ============================
+coverage/
+.nyc_output/
